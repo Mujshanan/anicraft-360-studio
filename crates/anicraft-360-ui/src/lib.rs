@@ -467,17 +467,21 @@ pub fn show_turn_ruler(
         ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
             let next = active_index.and_then(|i| model.views.get(i + 1));
             let previous = active_index.and_then(|i| i.checked_sub(1).and_then(|j| model.views.get(j)));
-            if ui.add_enabled(next.is_some(), egui::Button::new("Next ›")).clicked() {
-                if let Some(view) = next {
-                    state.active_view_id = Some(view.id.clone());
-                    actions.push(StudioUiAction::ActivateCharacterView { view_id: view.id.clone() });
-                }
+            if ui.add_enabled(next.is_some(), egui::Button::new("Next ›")).clicked()
+                && let Some(view) = next
+            {
+                state.active_view_id = Some(view.id.clone());
+                actions.push(StudioUiAction::ActivateCharacterView {
+                    view_id: view.id.clone(),
+                });
             }
-            if ui.add_enabled(previous.is_some(), egui::Button::new("‹ Previous")).clicked() {
-                if let Some(view) = previous {
-                    state.active_view_id = Some(view.id.clone());
-                    actions.push(StudioUiAction::ActivateCharacterView { view_id: view.id.clone() });
-                }
+            if ui.add_enabled(previous.is_some(), egui::Button::new("‹ Previous")).clicked()
+                && let Some(view) = previous
+            {
+                state.active_view_id = Some(view.id.clone());
+                actions.push(StudioUiAction::ActivateCharacterView {
+                    view_id: view.id.clone(),
+                });
             }
         });
     });
@@ -633,46 +637,6 @@ fn empty_state(ui: &mut Ui, title: &str, description: &str) {
     });
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn default_state_is_transient_and_empty() {
-        let state = StudioUiState::default();
-        assert!(state.selected_node_id.is_none());
-        assert!(state.collapsed_node_ids.is_empty());
-        assert!(state.active_view_id.is_none());
-        assert!(state.selected_issue_id.is_none());
-        assert!(state.asset_filter.is_empty());
-    }
-
-    #[test]
-    fn capability_defaults_are_fail_closed() {
-        let capabilities = StudioCapabilities::default();
-        assert!(!capabilities.create_switch_group);
-        assert!(!capabilities.create_view);
-        assert!(!capabilities.open_assets);
-        assert!(!capabilities.open_deformation_targets);
-        assert!(!capabilities.controller_preview);
-    }
-
-    #[test]
-    fn view_statuses_and_origins_are_explicit() {
-        assert_eq!(ViewStatus::MissingArtwork.label(), "Missing artwork");
-        assert_eq!(ViewOrigin::Preview.label(), "Preview only");
-        assert_eq!(angle_label(f32::NAN), "Angle unavailable");
-    }
-
-    #[test]
-    fn controller_and_pin_deformation_are_not_a_combined_concept() {
-        let controller = Some("controller-a".to_owned());
-        let target = Some("pin-target-a".to_owned());
-        assert_ne!(controller, target);
-    }
-}
-
-
 /// Compose the primary 360 Studio workspace inside a host-owned dock region.
 ///
 /// The host supplies the real AniCraft Stage through `show_stage`. The callback
@@ -771,4 +735,43 @@ pub fn show_workspace(
             },
         );
     });
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn default_state_is_transient_and_empty() {
+        let state = StudioUiState::default();
+        assert!(state.selected_node_id.is_none());
+        assert!(state.collapsed_node_ids.is_empty());
+        assert!(state.active_view_id.is_none());
+        assert!(state.selected_issue_id.is_none());
+        assert!(state.asset_filter.is_empty());
+    }
+
+    #[test]
+    fn capability_defaults_are_fail_closed() {
+        let capabilities = StudioCapabilities::default();
+        assert!(!capabilities.create_switch_group);
+        assert!(!capabilities.create_view);
+        assert!(!capabilities.open_assets);
+        assert!(!capabilities.open_deformation_targets);
+        assert!(!capabilities.controller_preview);
+    }
+
+    #[test]
+    fn view_statuses_and_origins_are_explicit() {
+        assert_eq!(ViewStatus::MissingArtwork.label(), "Missing artwork");
+        assert_eq!(ViewOrigin::Preview.label(), "Preview only");
+        assert_eq!(angle_label(f32::NAN), "Angle unavailable");
+    }
+
+    #[test]
+    fn controller_and_pin_deformation_are_not_a_combined_concept() {
+        let controller = Some("controller-a".to_owned());
+        let target = Some("pin-target-a".to_owned());
+        assert_ne!(controller, target);
+    }
 }
