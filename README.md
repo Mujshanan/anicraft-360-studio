@@ -15,6 +15,10 @@ It organizes how a character is assembled, controlled, and represented across vi
 - View correspondence, landmarks, silhouette/proportion checks, and turn-sheet workflows.
 - View-specific corrective setup, using Forma Deform for deformation behavior.
 
+## Run the UI prototype
+
+A standalone Rust/egui workspace prototype is included. See [UI_PROTOTYPE.md](UI_PROTOTYPE.md) for setup and its current integration limitations; run it with `cargo run`.
+
 ## Relationship to Forma Deform
 
 The two plugins have distinct responsibilities:
