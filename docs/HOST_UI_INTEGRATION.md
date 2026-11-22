@@ -55,7 +55,7 @@ The companion AniCraft integration branch `feat/anicraft-360-studio-native-integ
 
 - **360 Studio** projects the active scene's visible symbols, shapes, groups, and native selection into the Character Hierarchy. Selecting a hierarchy item updates AniCraft's actual `Session.selection` and the Stage reflects it on the next frame.
 - **Smart Bones** projects armatures through the existing `bone.info` command. Creating a Smart Bone authors an AniCraft armature bone through `bone.add`; joint limits use `bone.set_limits`. All edits therefore participate in the host's command validation, undo history, and live Stage rendering.
-- **Switch Groups** use AniCraft Library folders named under `Switch Groups`. A group's symbol assets are its discrete options; adding options uses `library.move`, and activating one on the current Stage selection uses `element.swap_symbol`.
+- **Switch Groups** use AniCraft Library folders named under `Switch Groups`. A group's symbol assets are its discrete options; adding options duplicates the source symbol into the group through an atomic host command, and activating one on the current Stage selection uses `element.swap_symbol`.
 
 The host's central Stage and bottom timeline remain the only Stage and timeline. Studio panels are docked beside Properties and read the same active `Session`, document, selection, playhead, and Library. There is no duplicate renderer or document state.
 
