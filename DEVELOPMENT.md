@@ -1,7 +1,7 @@
 # AniCraft 360 Studio — Development and Architecture
 
 **Project role:** native AniCraft character-authoring workspace/plugin.  
-**Status:** proposal; the repository currently contains only its initial README.  
+**Status:** architecture proposal plus initial host-embedded UI panel crate; live AniCraft host integration is not yet implemented.  
 **Scope:** modular character/symbol rigging, Smart Bones, Switch Groups, asset library workflows, and multi-view/360° character authoring.
 
 ## 1. Product definition

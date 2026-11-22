@@ -64,6 +64,6 @@ The layout is a proposal, not an implementation or a request to add new host-lev
 
 ## Current status
 
-This repository is an architecture/workspace proposal. Features listed here are planned responsibilities, not claims that the plugin or its UI is already implemented.
+This repository contains the architecture proposal and the initial `anicraft-360-ui` host-embedded egui panel crate. The hierarchy, view rail, properties/validation, and asset-library panels are implemented as UI components; live AniCraft host integration and persistent character features remain planned.
 
 See [DEVELOPMENT.md](DEVELOPMENT.md) for the feature matrix, code-reuse audit, ownership boundaries, UI behavior, and staged roadmap.
