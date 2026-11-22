@@ -1,10 +1,10 @@
 # AniCraft 360 Studio — Development and Architecture
 
 **Project role:** native AniCraft character-authoring workspace/plugin.  
-**Status:** proposal; the repository currently contains only its initial README.  
+**Status:** initial native egui workspace shell implemented in `src/lib.rs`; host integration remains pending.  
 **Scope:** modular character/symbol rigging, Smart Bones, Switch Groups, asset library workflows, and multi-view/360° character authoring.
 
-## 1. Product definition
+See [the native UI integration boundary](docs/NATIVE_UI_INTEGRATION.md) for the current snapshot/command adapter and the limitation of AniCraft's existing WebAssembly plug-in ABI. The UI crate intentionally matches the host's egui 0.36 dependency.\n\n## 1. Product definition
 
 AniCraft 360 Studio answers: **how is a character assembled, controlled, organized, and represented across its authored views?**
 
