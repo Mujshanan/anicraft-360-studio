@@ -16,7 +16,7 @@ The initial workspace shell provides:
 
 ## Architecture
 
-This crate intentionally depends on `egui`, not AniCraft's application or document crates. The host implements `StudioHost` to:
+This crate intentionally depends on `egui`, not AniCraft's application or document crates. The host mounts `StudioUi::show(&mut egui::Ui, &mut host)` inside its own dockable panel and implements `StudioHost` to:
 1. provide a read-only `StudioSnapshot`;
 2. execute `StudioCommand` through AniCraft's command/undo system;
 3. render the real AniCraft Stage in the provided UI region.
