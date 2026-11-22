@@ -1,7 +1,7 @@
 # AniCraft 360 Studio — Development and Architecture
 
 **Project role:** native AniCraft character-authoring workspace/plugin.  
-**Status:** architecture proposal plus initial host-embedded UI panel crate; live AniCraft host integration is not yet implemented.  
+**Status:** architecture proposal plus native egui 0.36 panel library; live AniCraft panel registration and host adapter are not yet implemented.  
 **Scope:** modular character/symbol rigging, Smart Bones, Switch Groups, asset library workflows, and multi-view/360° character authoring.
 
 ## 1. Product definition
@@ -170,6 +170,26 @@ These are research references, not dependencies or approved code imports.
 - Integration tests for AniCraft undo/redo, persistence, symbols, and host timeline.
 - UI tests for view switching, selection, missing-view diagnostics, and asset-library navigation.
 - Deterministic preview tests; no live-playback claim before a verified host evaluator exists.
+
+
+## 10. Current UI implementation status
+
+The Studio repository contains the host-independent native panel crate at `crates/anicraft-360-ui`. It targets egui 0.36, matching the audited AniCraft host dependency, and inherits the active egui style/visuals instead of defining a competing theme or docking system.
+
+Implemented panel components on the UI implementation branch:
+- Workspace identity and integration status header.
+- Character hierarchy projection and selection intents.
+- Authored View Rail with explicit authored/generated/preview and validation states.
+- Discrete Turn Ruler navigation between registered views only.
+- Contextual Properties Inspector with canonical controller/target references.
+- Character Asset Library presentation and capability-gated open actions.
+- Diagnostics presentation and host-navigation intents.
+
+The UI crate consumes immutable host/domain projections, stores only transient UI state, and emits typed semantic actions. The host remains responsible for validating and executing commands, persistence, undo/redo, stage rendering, timeline, VFS, and evaluation.
+
+**Plugin constraint:** the audited AniCraft WASM plugin ABI does not expose arbitrary native egui panel registration. The panel crate is therefore not yet installable as a UI plugin. A host-owned panel extension point or native bridge is required for the plugin stage; the same crate can then be linked into AniCraft for native inclusion. See [HOST_UI_INTEGRATION.md](docs/HOST_UI_INTEGRATION.md).
+
+This implementation status does not imply that the host adapter, character schemas, persistent authoring commands, live stage overlays, or playback integration exist.
 
 ## 9. Non-goals and change control
 
