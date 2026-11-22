@@ -308,6 +308,7 @@ pub struct StudioUiState {
     pub switch_group_name: String,
     pub selected_switch_group_id: Option<String>,
     pub selected_switch_option_id: Option<String>,
+    pub selected_switch_source_symbol_id: Option<String>,
 }
 
 /// Semantic intents. The host validates every intent against the active
@@ -696,6 +697,7 @@ pub fn show_switch_group_editor(
         if ui.selectable_label(selected, format!("▤ {}", group.name)).clicked() {
             state.selected_switch_group_id = Some(group.id.clone());
             state.selected_switch_option_id = group.options.first().map(|v| v.id.clone());
+            state.selected_switch_source_symbol_id = None;
         }
         if selected {
             for option in &group.options {
@@ -705,7 +707,7 @@ pub fn show_switch_group_editor(
                 }
             }
             if !model.library_symbols.is_empty() {
-                let mut chosen = state.selected_switch_option_id.clone().unwrap_or_default();
+                let mut chosen = state.selected_switch_source_symbol_id.clone().unwrap_or_default();
                 egui::ComboBox::from_id_salt(("studio_switch_symbol", group.id.as_str()))
                     .selected_text(model.library_symbols.iter().find(|s| s.id == chosen).map_or("Choose symbol", |s| s.name.as_str()))
                     .show_ui(ui, |ui| {
@@ -713,9 +715,9 @@ pub fn show_switch_group_editor(
                             ui.selectable_value(&mut chosen, symbol.id.clone(), &symbol.name);
                         }
                     });
-                state.selected_switch_option_id = Some(chosen);
+                state.selected_switch_source_symbol_id = (!chosen.is_empty()).then_some(chosen);
                 if ui.button("Duplicate selected symbol into group").clicked()
-                    && let Some(symbol_id) = state.selected_switch_option_id.clone()
+                    && let Some(symbol_id) = state.selected_switch_source_symbol_id.clone()
                 {
                     actions.push(StudioUiAction::RequestAddSwitchOption { group_id: group.id.clone(), symbol_id });
                 }
