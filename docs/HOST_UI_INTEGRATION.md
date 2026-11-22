@@ -66,3 +66,10 @@ The Smart Bone panel currently authors native armature bones and limits. It does
 Switch Groups currently provide folder-backed option organization and symbol swapping. They do not introduce a second timeline, continuous interpolation, or custom evaluator.
 
 The host integration depends on a pinned commit of the Studio UI crate. Update that pin only after the Studio branch has a reviewed commit, and keep both pull requests draft until the cross-repository API is reviewed together.
+
+
+## Multi-view authoring panel
+
+The reusable UI crate exposes `multiview::show_multi_view_authoring` as a host-dockable panel. The host supplies the canonical `CharacterView` list and per-view `ViewArtworkCoverage` snapshots (required artwork count and covered artwork count). The panel provides Front (0°), Three-quarter (45°), Side (90°), and Back (180°) slots, emits create/activate intents, and selects the nearest registered view for a requested angle using circular angular distance.
+
+Coverage is displayed per view and as an aggregate, with explicit unavailable/zero-requirement states. Counts are host-computed; Studio does not guess artwork visibility, synthesize missing artwork, or claim that an unregistered angle has a rendered view. The host must dispatch `MultiViewAction` through its existing document/undo boundary and refresh the supplied view and coverage snapshots after edits.
