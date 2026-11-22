@@ -259,7 +259,7 @@ fn paint_stage(ui: &egui::Ui, rect: Rect, view: ViewTab, landmarks: bool, silhou
         if view != ViewTab::Side { p.circle_filled(Pos2::new(head.x + eye_offset, head.y - 2.0), 3.2 * scale, Color32::from_rgb(55, 45, 43)); }
         p.line_segment([Pos2::new(head.x - 8.0 * scale, head.y + 18.0 * scale), Pos2::new(head.x + 8.0 * scale, head.y + 18.0 * scale)], Stroke::new(1.5, Color32::from_rgb(150, 75, 70)));
     } else {
-        p.arc(center, 0.0, 0.0, 0.0, Stroke::NONE);
+        p.line_segment([Pos2::new(head.x, head.y - 12.0 * scale), Pos2::new(head.x, head.y + 22.0 * scale)], Stroke::new(2.0, Color32::from_rgb(150, 75, 70)));
     }
     if silhouette { p.circle_stroke(head, w * 0.53, Stroke::new(1.0, VIOLET)); p.rect_stroke(body.expand(5.0), 24.0, Stroke::new(1.0, VIOLET), egui::StrokeKind::Inside); }
     if landmarks {
