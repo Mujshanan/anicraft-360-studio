@@ -15,6 +15,8 @@
 use egui::{Align, Color32, Layout, RichText, Ui};
 use std::collections::BTreeSet;
 
+pub mod multiview;
+
 /// A read-only character item projected from the host document and Studio data.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct CharacterNode {
