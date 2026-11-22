@@ -184,6 +184,34 @@ impl AssetCompatibility {
     }
 }
 
+
+/// A native AniCraft armature bone exposed to Studio authoring.
+#[derive(Clone, Debug, PartialEq)]
+pub struct SmartBoneEntry {
+    pub id: String,
+    pub name: String,
+    pub parent_element_id: String,
+    pub child_element_id: String,
+    pub angle_degrees: f32,
+    pub limits_degrees: Option<[f32; 2]>,
+    /// Canonical Forma Deform ControllerId reference; never evaluated here.
+    pub controller_id: Option<String>,
+}
+
+/// A Switch Group is a Library folder containing alternate symbol artwork.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct SwitchGroupEntry {
+    pub id: String,
+    pub name: String,
+    pub options: Vec<SwitchOptionEntry>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct SwitchOptionEntry {
+    pub id: String,
+    pub name: String,
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum IssueSeverity {
     Info,
@@ -227,6 +255,7 @@ pub struct ValidationIssue {
 /// Plugin presence or a version string alone is not evidence of support.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct StudioCapabilities {
+    pub create_smart_bone: bool,
     pub create_switch_group: bool,
     pub create_view: bool,
     pub open_assets: bool,
@@ -240,6 +269,12 @@ pub struct StudioUiModel {
     pub character_name: String,
     pub document_name: String,
     pub nodes: Vec<CharacterNode>,
+
+    /// Selected host element IDs, in AniCraft selection order.
+    pub selected_element_ids: Vec<String>,
+    pub smart_bones: Vec<SmartBoneEntry>,
+    pub switch_groups: Vec<SwitchGroupEntry>,
+    pub library_symbols: Vec<SwitchOptionEntry>,
     /// Already sorted by the domain's canonical angle ordering.
     pub views: Vec<CharacterView>,
     pub assets: Vec<AssetEntry>,
@@ -265,6 +300,14 @@ pub struct StudioUiState {
     pub active_view_id: Option<String>,
     pub asset_filter: String,
     pub selected_issue_id: Option<String>,
+
+    pub smart_bone_name: String,
+    pub smart_bone_min_degrees: f32,
+    pub smart_bone_max_degrees: f32,
+    pub selected_smart_bone_id: Option<String>,
+    pub switch_group_name: String,
+    pub selected_switch_group_id: Option<String>,
+    pub selected_switch_option_id: Option<String>,
 }
 
 /// Semantic intents. The host validates every intent against the active
@@ -273,7 +316,21 @@ pub struct StudioUiState {
 pub enum StudioUiAction {
     SelectCharacterNode { node_id: String },
     ActivateCharacterView { view_id: String },
-    RequestCreateSwitchGroup,
+
+    RequestCreateSmartBone {
+        parent_element_id: String,
+        child_element_id: String,
+        name: String,
+    },
+    RequestSelectSmartBone { bone_id: String },
+    RequestSetSmartBoneLimits {
+        bone_id: String,
+        min_degrees: f32,
+        max_degrees: f32,
+    },
+    RequestCreateSwitchGroup { name: String },
+    RequestAddSwitchOption { group_id: String, symbol_id: String },
+    RequestActivateSwitchOption { symbol_id: String },
     RequestCreateView,
     RequestOpenAsset { asset_id: String },
     RequestOpenDeformationTarget { target_id: String },
@@ -330,7 +387,7 @@ pub fn show_character_hierarchy(
         .on_disabled_hover_text("The host does not currently expose Switch Group creation.")
         .clicked()
     {
-        actions.push(StudioUiAction::RequestCreateSwitchGroup);
+        actions.push(StudioUiAction::RequestCreateSwitchGroup { name: state.switch_group_name.trim().to_owned() });
     }
     ui.separator();
 
@@ -535,6 +592,139 @@ pub fn show_properties(
         }
     } else {
         empty_state(ui, "Nothing selected", "Select a character item to inspect its properties.");
+    }
+}
+
+
+/// Smart Bone authoring over AniCraft's native armature commands. Controller
+/// references are identifiers only; Forma Deform owns their evaluation.
+pub fn show_smart_bone_editor(
+    ui: &mut Ui,
+    model: &StudioUiModel,
+    state: &mut StudioUiState,
+    actions: &mut Vec<StudioUiAction>,
+) {
+    ui.heading("Smart Bone");
+    ui.label(RichText::new("Author a native armature bone, then bind its controller in Forma Deform.").weak());
+    ui.horizontal(|ui| {
+        ui.label("Name");
+        ui.text_edit_singleline(&mut state.smart_bone_name);
+    });
+    let can_create = model.capabilities.create_smart_bone && model.selected_element_ids.len() >= 2;
+    if ui.add_enabled(can_create, egui::Button::new("＋ Create from selected elements")).clicked() {
+        if let (Some(parent), Some(child)) = (model.selected_element_ids.first(), model.selected_element_ids.get(1)) {
+            actions.push(StudioUiAction::RequestCreateSmartBone {
+                parent_element_id: parent.clone(),
+                child_element_id: child.clone(),
+                name: state.smart_bone_name.trim().to_owned(),
+            });
+        }
+    }
+    if model.selected_element_ids.len() < 2 {
+        ui.label(RichText::new("Select the parent artwork, then the child artwork on the Stage.").weak());
+    }
+    ui.separator();
+    if model.smart_bones.is_empty() {
+        empty_state(ui, "No armature bones", "Create a bone from two selected Stage elements to begin authoring.");
+        return;
+    }
+
+    egui::ScrollArea::vertical().show(ui, |ui| {
+        for bone in &model.smart_bones {
+            let selected = state.selected_smart_bone_id.as_deref() == Some(bone.id.as_str());
+            if ui.selectable_label(selected, format!("{}  {}", if bone.name.is_empty() { "Bone" } else { &bone.name }, bone.id)).clicked() {
+                state.selected_smart_bone_id = Some(bone.id.clone());
+                state.smart_bone_min_degrees = bone.limits_degrees.map_or(-180.0, |v| v[0]);
+                state.smart_bone_max_degrees = bone.limits_degrees.map_or(180.0, |v| v[1]);
+                actions.push(StudioUiAction::RequestSelectSmartBone { bone_id: bone.id.clone() });
+            }
+            if selected {
+                ui.horizontal(|ui| {
+                    ui.label("Angle");
+                    ui.monospace(format!("{:.1}°", bone.angle_degrees));
+                });
+                ui.horizontal(|ui| {
+                    ui.label("Limits");
+                    ui.add(egui::DragValue::new(&mut state.smart_bone_min_degrees).speed(1.0).suffix("°"));
+                    ui.label("to");
+                    ui.add(egui::DragValue::new(&mut state.smart_bone_max_degrees).speed(1.0).suffix("°"));
+                    if ui.button("Apply").clicked() {
+                        actions.push(StudioUiAction::RequestSetSmartBoneLimits {
+                            bone_id: bone.id.clone(),
+                            min_degrees: state.smart_bone_min_degrees,
+                            max_degrees: state.smart_bone_max_degrees,
+                        });
+                    }
+                });
+                ui.label(RichText::new(format!("Parent {} → child {}", bone.parent_element_id, bone.child_element_id)).weak());
+                if let Some(controller) = &bone.controller_id {
+                    ui.label("Forma Deform ControllerId");
+                    ui.monospace(controller);
+                } else {
+                    ui.label(RichText::new("No Forma Deform controller bound").weak());
+                }
+            }
+            ui.separator();
+        }
+    });
+}
+
+/// Discrete Switch Groups backed by AniCraft Library folders and symbol assets.
+/// Activating an option changes the selected symbol instance through a host command.
+pub fn show_switch_group_editor(
+    ui: &mut Ui,
+    model: &StudioUiModel,
+    state: &mut StudioUiState,
+    actions: &mut Vec<StudioUiAction>,
+) {
+    ui.heading("Switch Groups");
+    ui.label(RichText::new("Each group is a Library folder; its options are alternate symbols.").weak());
+    ui.horizontal(|ui| {
+        ui.text_edit_singleline(&mut state.switch_group_name);
+        if ui.add_enabled(model.capabilities.create_switch_group && !state.switch_group_name.trim().is_empty(),
+            egui::Button::new("＋ Create Group")).clicked() {
+            actions.push(StudioUiAction::RequestCreateSwitchGroup { name: state.switch_group_name.trim().to_owned() });
+        }
+    });
+    if model.switch_groups.is_empty() {
+        empty_state(ui, "No Switch Groups", "Create a group, then add symbol assets as its options.");
+    }
+    for group in &model.switch_groups {
+        let selected = state.selected_switch_group_id.as_deref() == Some(group.id.as_str());
+        if ui.selectable_label(selected, format!("▤ {}", group.name)).clicked() {
+            state.selected_switch_group_id = Some(group.id.clone());
+            state.selected_switch_option_id = group.options.first().map(|v| v.id.clone());
+        }
+        if selected {
+            for option in &group.options {
+                if ui.selectable_label(state.selected_switch_option_id.as_deref() == Some(option.id.as_str()),
+                    format!("  ▪ {}", option.name)).clicked() {
+                    state.selected_switch_option_id = Some(option.id.clone());
+                }
+            }
+            if !model.library_symbols.is_empty() {
+                let mut chosen = state.selected_switch_option_id.clone().unwrap_or_default();
+                egui::ComboBox::from_id_salt(("studio_switch_symbol", group.id.as_str()))
+                    .selected_text(model.library_symbols.iter().find(|s| s.id == chosen).map_or("Choose symbol", |s| s.name.as_str()))
+                    .show_ui(ui, |ui| {
+                        for symbol in &model.library_symbols {
+                            ui.selectable_value(&mut chosen, symbol.id.clone(), &symbol.name);
+                        }
+                    });
+                state.selected_switch_option_id = Some(chosen);
+                if ui.button("Add selected symbol as option").clicked()
+                    && let Some(symbol_id) = state.selected_switch_option_id.clone()
+                {
+                    actions.push(StudioUiAction::RequestAddSwitchOption { group_id: group.id.clone(), symbol_id });
+                }
+            }
+            if let Some(option_id) = state.selected_switch_option_id.as_deref()
+                && ui.add_enabled(!model.selected_element_ids.is_empty(), egui::Button::new("Activate on Stage selection")).clicked()
+            {
+                actions.push(StudioUiAction::RequestActivateSwitchOption { symbol_id: option_id.to_owned() });
+            }
+        }
+        ui.separator();
     }
 }
 
@@ -754,6 +944,7 @@ mod tests {
     #[test]
     fn capability_defaults_are_fail_closed() {
         let capabilities = StudioCapabilities::default();
+        assert!(!capabilities.create_smart_bone);
         assert!(!capabilities.create_switch_group);
         assert!(!capabilities.create_view);
         assert!(!capabilities.open_assets);
