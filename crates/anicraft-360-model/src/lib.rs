@@ -157,6 +157,9 @@ impl CharacterDocument {
             let path = format!("parts[{index}]");
             check_id(&mut issues, "part.id.empty", &format!("{path}.id"), part.id.is_empty());
             check_text(&mut issues, "part.name.empty", &format!("{path}.name"), &part.name);
+            if let Some(symbol_id) = &part.host_symbol_id {
+                check_id(&mut issues, "part.host_symbol.empty", &format!("{path}.host_symbol_id"), symbol_id.is_empty());
+            }
             if let Some(parent) = &part.parent_part_id {
                 if parent == &part.id {
                     issue(&mut issues, "part.parent.self", format!("{path}.parent_part_id"), "A part cannot be its own parent");
@@ -182,8 +185,10 @@ impl CharacterDocument {
             let base = format!("view_sets[{set_index}]");
             check_id(&mut issues, "view_set.id.empty", &format!("{base}.id"), set.id.is_empty());
             check_text(&mut issues, "view_set.name.empty", &format!("{base}.name"), &set.name);
-            check_id(&mut issues, "view_set.zero_view.missing", &format!("{base}.zero_angle_view_id"),
-                !set.views.iter().any(|view| view.id == set.zero_angle_view_id));
+            if !set.views.iter().any(|view| view.id == set.zero_angle_view_id) {
+                issue(&mut issues, "view_set.zero_view.missing", format!("{base}.zero_angle_view_id"),
+                    "Zero-angle reference must identify a view in this ViewSet");
+            }
             let view_ids = unique_ids(
                 &mut issues,
                 "view.id.duplicate",
@@ -195,6 +200,9 @@ impl CharacterDocument {
                 let path = format!("{base}.views[{view_index}]");
                 check_id(&mut issues, "view.id.empty", &format!("{path}.id"), view.id.is_empty());
                 check_text(&mut issues, "view.name.empty", &format!("{path}.name"), &view.name);
+                if let Some(symbol_id) = &view.artwork_symbol_id {
+                    check_id(&mut issues, "view.artwork_symbol.empty", &format!("{path}.artwork_symbol_id"), symbol_id.is_empty());
+                }
                 if !view.angle_degrees.is_finite()
                     || !(0.0..360.0).contains(&view.angle_degrees)
                 {
@@ -239,6 +247,13 @@ impl CharacterDocument {
             let path = format!("smart_bones[{index}]");
             check_id(&mut issues, "smart_bone.id.empty", &format!("{path}.id"), bone.id.is_empty());
             check_text(&mut issues, "smart_bone.name.empty", &format!("{path}.name"), &bone.name);
+            check_id(&mut issues, "smart_bone.host_bone.empty", &format!("{path}.host_bone_id"), bone.host_bone_id.is_empty());
+            if let Some(controller_id) = &bone.controller_id {
+                check_id(&mut issues, "smart_bone.controller.empty", &format!("{path}.controller_id"), controller_id.is_empty());
+            }
+            for (target_index, target_id) in bone.corrective_targets.iter().enumerate() {
+                check_id(&mut issues, "smart_bone.target.empty", &format!("{path}.corrective_targets[{target_index}]"), target_id.is_empty());
+            }
             if !bone.trigger_range.min_degrees.is_finite()
                 || !bone.trigger_range.max_degrees.is_finite()
                 || bone.trigger_range.min_degrees >= bone.trigger_range.max_degrees
@@ -264,6 +279,9 @@ impl CharacterDocument {
             let path = format!("switch_groups[{group_index}]");
             check_id(&mut issues, "switch_group.id.empty", &format!("{path}.id"), group.id.is_empty());
             check_text(&mut issues, "switch_group.name.empty", &format!("{path}.name"), &group.name);
+            if let Some(folder_id) = &group.host_library_folder_id {
+                check_id(&mut issues, "switch_group.library_folder.empty", &format!("{path}.host_library_folder_id"), folder_id.is_empty());
+            }
             if let Some(set_id) = &group.view_set_id {
                 if !view_set_ids.contains(set_id.as_str()) {
                     issue(&mut issues, "switch_group.view_set.missing", format!("{path}.view_set_id"),
@@ -281,6 +299,7 @@ impl CharacterDocument {
                 let option_path = format!("{path}.options[{option_index}]");
                 check_id(&mut issues, "switch_option.id.empty", &format!("{option_path}.id"), option.id.is_empty());
                 check_text(&mut issues, "switch_option.name.empty", &format!("{option_path}.name"), &option.name);
+                check_id(&mut issues, "switch_option.symbol.empty", &format!("{option_path}.symbol_id"), option.symbol_id.is_empty());
                 if !symbols.insert(option.symbol_id.as_str()) {
                     issue(&mut issues, "switch_option.symbol.duplicate", format!("{option_path}.symbol_id"),
                         "A symbol may appear only once in a Switch Group");
