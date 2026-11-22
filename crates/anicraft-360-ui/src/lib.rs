@@ -610,7 +610,7 @@ pub fn show_properties(
 
 
 /// Human-readable selection guidance; IDs remain available for precise host diagnostics.
-fn show_stage_selection_guidance(ui: &mut Ui, model: &StudioUiModel, purpose: &str) {
+fn show_stage_selection_guidance(ui: &mut Ui, model: &StudioUiModel, purpose: &str, ordered_pair: bool) {
     let count = model.selected_element_ids.len();
     ui.group(|ui| {
         ui.horizontal(|ui| {
@@ -620,16 +620,21 @@ fn show_stage_selection_guidance(ui: &mut Ui, model: &StudioUiModel, purpose: &s
             });
         });
         match count {
-            0 => ui.label(RichText::new("Nothing selected. Select artwork on the Stage to continue.").weak()),
+            0 => { ui.label(RichText::new("Nothing selected. Select artwork on the Stage to continue.").weak()); }
             1 => {
                 ui.label(format!("1. {}", model.selected_element_ids[0]));
-                ui.label(RichText::new("Select a second, different element.").weak());
+                if ordered_pair { ui.label(RichText::new("Select a second, different element.").weak()); }
+            }
+            _ if ordered_pair => {
+                ui.label(format!("Parent: {}", model.selected_element_ids[0]));
+                ui.label(format!("Child: {}", model.selected_element_ids[1]));
+                if count > 2 {
+                    ui.label(RichText::new(format!("{} additional selection(s) are ignored; the first two define the bone.", count - 2)).weak());
+                }
             }
             _ => {
-                ui.label(format!("Parent / target: {}", model.selected_element_ids[0]));
-                ui.label(format!("Child / next target: {}", model.selected_element_ids[1]));
-                if count > 2 {
-                    ui.label(RichText::new(format!("{} additional selected element(s) will not be used for this action.", count - 2)).weak());
+                for (index, id) in model.selected_element_ids.iter().enumerate() {
+                    ui.label(format!("{}. {}", index + 1, id));
                 }
             }
         }
@@ -684,7 +689,7 @@ pub fn show_smart_bone_editor(
             name: state.smart_bone_name.trim().to_owned(),
         });
     }
-    show_stage_selection_guidance(ui, model, "Smart Bone source");
+    show_stage_selection_guidance(ui, model, "Smart Bone source", true);
     if model.selected_element_ids.len() >= 2 && model.selected_element_ids[0] == model.selected_element_ids[1] {
         ui.colored_label(ui.visuals().warn_fg_color, "The first two selections must be different elements.");
     }
@@ -734,7 +739,7 @@ pub fn show_smart_bone_editor(
                 ui.label(RichText::new(format!("Parent {} → child {}", bone.parent_element_id, bone.child_element_id)).weak());
                 let (status, detail) = smart_bone_controller_status(bone, model.capabilities.controller_preview);
                 ui.horizontal(|ui| {
-                    let color = if bone.controller_id.is_some() { ui.visuals().positive_text_color() } else { ui.visuals().warn_fg_color };
+                    let color = if bone.controller_id.is_some() { ui.visuals().hyperlink_color } else { ui.visuals().warn_fg_color };
                     ui.colored_label(color, status);
                 });
                 ui.label(RichText::new(detail).weak());
@@ -768,7 +773,7 @@ pub fn show_switch_group_editor(
     if model.switch_groups.is_empty() {
         empty_state(ui, "No Switch Groups", "Create a group, then add symbol assets as its options.");
     }
-    show_stage_selection_guidance(ui, model, "Switch target");
+    show_stage_selection_guidance(ui, model, "Switch target", false);
     for group in &model.switch_groups {
         let selected = state.selected_switch_group_id.as_deref() == Some(group.id.as_str());
         if ui.selectable_label(selected, format!("▤ {}", group.name)).clicked() {
