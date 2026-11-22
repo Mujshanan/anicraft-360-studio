@@ -189,6 +189,13 @@ impl CharacterDocument {
                 issue(&mut issues, "view_set.zero_view.missing", format!("{base}.zero_angle_view_id"),
                     "Zero-angle reference must identify a view in this ViewSet");
             }
+            if let Some(zero_view) = set.views.iter().find(|view| view.id == set.zero_angle_view_id)
+                && zero_view.angle_degrees.is_finite()
+                && zero_view.angle_degrees.abs() > ANGLE_EPSILON_DEGREES
+            {
+                issue(&mut issues, "view_set.zero_view.angle", format!("{base}.zero_angle_view_id"),
+                    "The zero-angle reference view must have an authored angle of 0 degrees");
+            }
             let view_ids = unique_ids(
                 &mut issues,
                 "view.id.duplicate",
@@ -621,6 +628,14 @@ mod tests {
         document.view_sets[0].views[1].angle_degrees = ANGLE_EPSILON_DEGREES / 2.0;
         let errors = document.validate().expect_err("coincident views must fail");
         assert!(errors.iter().any(|error| error.code == "view.angle.duplicate"));
+    }
+
+    #[test]
+    fn zero_angle_reference_must_be_at_zero_degrees() {
+        let mut document = valid_document();
+        document.view_sets[0].views[0].angle_degrees = 5.0;
+        let errors = document.validate().expect_err("zero-angle reference must be zero degrees");
+        assert!(errors.iter().any(|error| error.code == "view_set.zero_view.angle"));
     }
 
     #[test]
