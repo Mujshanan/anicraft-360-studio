@@ -145,10 +145,10 @@ impl CharacterDocument {
         );
         let _ = (smart_bone_ids, switch_group_ids, asset_ids);
 
-        if let Some(root) = &self.root_part_id {
-            if !part_ids.contains(root.as_str()) {
-                issue(&mut issues, "part.root.missing", "root_part_id", "Root part does not exist");
-            }
+        if let Some(root) = &self.root_part_id
+            && !part_ids.contains(root.as_str())
+        {
+            issue(&mut issues, "part.root.missing", "root_part_id", "Root part does not exist");
         }
 
         let part_map: HashMap<&str, &CharacterPart> =
@@ -261,11 +261,11 @@ impl CharacterDocument {
                 issue(&mut issues, "smart_bone.range.invalid", format!("{path}.trigger_range"),
                     "Trigger range must have finite bounds with min_degrees < max_degrees");
             }
-            if let Some(set_id) = &bone.view_set_id {
-                if !view_set_ids.contains(set_id.as_str()) {
-                    issue(&mut issues, "smart_bone.view_set.missing", format!("{path}.view_set_id"),
-                        "Referenced view set does not exist");
-                }
+            if let Some(set_id) = &bone.view_set_id
+                && !view_set_ids.contains(set_id.as_str())
+            {
+                issue(&mut issues, "smart_bone.view_set.missing", format!("{path}.view_set_id"),
+                    "Referenced view set does not exist");
             }
             for part_id in &bone.affected_part_ids {
                 if !part_ids.contains(part_id.as_str()) {
@@ -282,11 +282,11 @@ impl CharacterDocument {
             if let Some(folder_id) = &group.host_library_folder_id {
                 check_id(&mut issues, "switch_group.library_folder.empty", &format!("{path}.host_library_folder_id"), folder_id.is_empty());
             }
-            if let Some(set_id) = &group.view_set_id {
-                if !view_set_ids.contains(set_id.as_str()) {
-                    issue(&mut issues, "switch_group.view_set.missing", format!("{path}.view_set_id"),
-                        "Referenced view set does not exist");
-                }
+            if let Some(set_id) = &group.view_set_id
+                && !view_set_ids.contains(set_id.as_str())
+            {
+                issue(&mut issues, "switch_group.view_set.missing", format!("{path}.view_set_id"),
+                    "Referenced view set does not exist");
             }
             let option_ids = unique_ids(
                 &mut issues,
