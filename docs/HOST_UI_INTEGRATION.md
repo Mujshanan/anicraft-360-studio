@@ -48,3 +48,21 @@ When AniCraft provides the extension point, it can depend on this crate directly
 - Forma Deform pin evaluation remains independent; the UI does not combine outputs or evaluators.
 - Preview results remain transient and clearly labeled.
 - AniCraft's existing timeline remains the only timeline.
+
+## 7. Native host adapter (implementation increment)
+
+The companion AniCraft integration branch `feat/anicraft-360-studio-native-integration` mounts three Studio panels in the host's existing dock system:
+
+- **360 Studio** projects the active scene's visible symbols, shapes, groups, and native selection into the Character Hierarchy. Selecting a hierarchy item updates AniCraft's actual `Session.selection` and the Stage reflects it on the next frame.
+- **Smart Bones** projects armatures through the existing `bone.info` command. Creating a Smart Bone authors an AniCraft armature bone through `bone.add`; joint limits use `bone.set_limits`. All edits therefore participate in the host's command validation, undo history, and live Stage rendering.
+- **Switch Groups** use AniCraft Library folders named under `Switch Groups`. A group's symbol assets are its discrete options; adding options uses `library.move`, and activating one on the current Stage selection uses `element.swap_symbol`.
+
+The host's central Stage and bottom timeline remain the only Stage and timeline. Studio panels are docked beside Properties and read the same active `Session`, document, selection, playhead, and Library. There is no duplicate renderer or document state.
+
+### Current boundary
+
+The Smart Bone panel currently authors native armature bones and limits. It does **not** create or evaluate Forma Deform Smart Controllers; the `ControllerId` field is reserved as a reference boundary and remains empty until the Forma Deform binding API is integrated. Pin deformation and controller evaluation remain independent.
+
+Switch Groups currently provide folder-backed option organization and symbol swapping. They do not introduce a second timeline, continuous interpolation, or custom evaluator.
+
+The host integration depends on a pinned commit of the Studio UI crate. Update that pin only after the Studio branch has a reviewed commit, and keep both pull requests draft until the cross-repository API is reviewed together.
