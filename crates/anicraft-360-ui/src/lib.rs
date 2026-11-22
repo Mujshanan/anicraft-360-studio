@@ -613,14 +613,14 @@ pub fn show_smart_bone_editor(
         ui.text_edit_singleline(&mut state.smart_bone_name);
     });
     let can_create = model.capabilities.create_smart_bone && model.selected_element_ids.len() >= 2;
-    if ui.add_enabled(can_create, egui::Button::new("＋ Create from selected elements")).clicked() {
-        if let (Some(parent), Some(child)) = (model.selected_element_ids.first(), model.selected_element_ids.get(1)) {
-            actions.push(StudioUiAction::RequestCreateSmartBone {
-                parent_element_id: parent.clone(),
-                child_element_id: child.clone(),
-                name: state.smart_bone_name.trim().to_owned(),
-            });
-        }
+    if ui.add_enabled(can_create, egui::Button::new("＋ Create from selected elements")).clicked()
+        && let (Some(parent), Some(child)) = (model.selected_element_ids.first(), model.selected_element_ids.get(1))
+    {
+        actions.push(StudioUiAction::RequestCreateSmartBone {
+            parent_element_id: parent.clone(),
+            child_element_id: child.clone(),
+            name: state.smart_bone_name.trim().to_owned(),
+        });
     }
     if model.selected_element_ids.len() < 2 {
         ui.label(RichText::new("Select the parent artwork, then the child artwork on the Stage.").weak());
