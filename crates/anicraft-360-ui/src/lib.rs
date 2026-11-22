@@ -12,7 +12,7 @@
 
 #![forbid(unsafe_code)]
 
-use egui::{Align, Color32, Layout, RichText, Ui};
+use egui::{Align, Color32, ComboBox, Layout, RichText, Ui};
 use std::collections::BTreeSet;
 
 /// A read-only character item projected from the host document and Studio data.
@@ -198,6 +198,13 @@ pub struct SmartBoneEntry {
     pub controller_id: Option<String>,
 }
 
+/// Controller choices projected from Forma Deform's registry. Studio stores only the ID.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ControllerChoice {
+    pub id: String,
+    pub name: String,
+}
+
 /// A Switch Group is a Library folder containing alternate symbol artwork.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct SwitchGroupEntry {
@@ -261,6 +268,8 @@ pub struct StudioCapabilities {
     pub open_assets: bool,
     pub open_deformation_targets: bool,
     pub controller_preview: bool,
+    /// The host can persist a Smart Bone to canonical Forma Deform ControllerId reference.
+    pub bind_smart_bone_controller: bool,
 }
 
 /// Read-only projection of the active character context.
@@ -273,6 +282,8 @@ pub struct StudioUiModel {
     /// Selected host element IDs, in AniCraft selection order.
     pub selected_element_ids: Vec<String>,
     pub smart_bones: Vec<SmartBoneEntry>,
+    /// Available canonical controller IDs supplied by the Forma Deform host adapter.
+    pub available_controllers: Vec<ControllerChoice>,
     pub switch_groups: Vec<SwitchGroupEntry>,
     pub library_symbols: Vec<SwitchOptionEntry>,
     /// Already sorted by the domain's canonical angle ordering.
@@ -305,6 +316,7 @@ pub struct StudioUiState {
     pub smart_bone_min_degrees: f32,
     pub smart_bone_max_degrees: f32,
     pub selected_smart_bone_id: Option<String>,
+    pub selected_smart_bone_controller_id: Option<String>,
     pub switch_group_name: String,
     pub selected_switch_group_id: Option<String>,
     pub selected_switch_option_id: Option<String>,
@@ -328,6 +340,11 @@ pub enum StudioUiAction {
         bone_id: String,
         min_degrees: f32,
         max_degrees: f32,
+    },
+    /// Bind or unbind a Smart Bone to a canonical Forma Deform controller identity.
+    RequestBindSmartBoneController {
+        bone_id: String,
+        controller_id: Option<String>,
     },
     RequestCreateSwitchGroup { name: String },
     RequestAddSwitchOption { group_id: String, symbol_id: String },
@@ -639,6 +656,7 @@ pub fn show_smart_bone_editor(
                 state.selected_smart_bone_id = Some(bone.id.clone());
                 state.smart_bone_min_degrees = bone.limits_degrees.map_or(-180.0, |v| v[0]);
                 state.smart_bone_max_degrees = bone.limits_degrees.map_or(180.0, |v| v[1]);
+                state.selected_smart_bone_controller_id = bone.controller_id.clone();
                 actions.push(StudioUiAction::RequestSelectSmartBone { bone_id: bone.id.clone() });
             }
             if selected {
@@ -660,11 +678,44 @@ pub fn show_smart_bone_editor(
                     }
                 });
                 ui.label(RichText::new(format!("Parent {} → child {}", bone.parent_element_id, bone.child_element_id)).weak());
-                if let Some(controller) = &bone.controller_id {
-                    ui.label("Forma Deform ControllerId");
-                    ui.monospace(controller);
-                } else {
-                    ui.label(RichText::new("No Forma Deform controller bound").weak());
+                ui.separator();
+                ui.label("Forma Deform controller");
+                let selected_controller = state.selected_smart_bone_controller_id.clone();
+                let selected_controller_label = selected_controller.as_deref()
+                    .and_then(|id| model.available_controllers.iter().find(|item| item.id == id))
+                    .map(|item| item.name.clone())
+                    .or_else(|| selected_controller.clone())
+                    .unwrap_or_else(|| "Not bound".to_owned());
+                let mut next_controller = selected_controller;
+                let mut controller_changed = false;
+                ui.add_enabled_ui(model.capabilities.bind_smart_bone_controller, |ui| {
+                    ComboBox::from_id_salt(("studio_smart_bone_controller", bone.id.as_str()))
+                        .selected_text(selected_controller_label)
+                        .show_ui(ui, |ui| {
+                            controller_changed |= ui.selectable_value(&mut next_controller, None, "Not bound").changed();
+                            for controller in &model.available_controllers {
+                                controller_changed |= ui.selectable_value(
+                                    &mut next_controller,
+                                    Some(controller.id.clone()),
+                                    &controller.name,
+                                ).changed();
+                            }
+                        });
+                });
+                if model.available_controllers.is_empty() {
+                    ui.label(RichText::new("No Forma Deform controllers are available in this document.").weak());
+                }
+                if !model.capabilities.bind_smart_bone_controller {
+                    ui.label(RichText::new("Controller binding is unavailable from the current host.").weak());
+                }
+                if controller_changed {
+                    state.selected_smart_bone_controller_id = next_controller.clone();
+                    if next_controller != bone.controller_id {
+                        actions.push(StudioUiAction::RequestBindSmartBoneController {
+                            bone_id: bone.id.clone(),
+                            controller_id: next_controller,
+                        });
+                    }
                 }
             }
             ui.separator();
@@ -954,6 +1005,7 @@ mod tests {
         assert!(!capabilities.open_assets);
         assert!(!capabilities.open_deformation_targets);
         assert!(!capabilities.controller_preview);
+        assert!(!capabilities.bind_smart_bone_controller);
     }
 
     #[test]
