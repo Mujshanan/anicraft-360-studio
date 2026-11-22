@@ -312,7 +312,7 @@ pub struct StudioUiState {
 
 /// Semantic intents. The host validates every intent against the active
 /// document, stable identities, capability state, and command registry.
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq)]
 pub enum StudioUiAction {
     SelectCharacterNode { node_id: String },
     ActivateCharacterView { view_id: String },
@@ -387,7 +387,9 @@ pub fn show_character_hierarchy(
         .on_disabled_hover_text("The host does not currently expose Switch Group creation.")
         .clicked()
     {
-        actions.push(StudioUiAction::RequestCreateSwitchGroup { name: state.switch_group_name.trim().to_owned() });
+        actions.push(StudioUiAction::RequestCreateSwitchGroup {
+            name: if state.switch_group_name.trim().is_empty() { "Switch Group".to_owned() } else { state.switch_group_name.trim().to_owned() },
+        });
     }
     ui.separator();
 
