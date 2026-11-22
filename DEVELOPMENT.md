@@ -111,7 +111,15 @@ The workspace should feel like a specialized AniCraft workspace, not a separate 
 
 ### 4.5 UI state and persistence
 
-Transient selection, hover, active tool, and preview overlays remain UI state. Authored view sets, Smart Bone definitions, Switch Group configuration, landmark correspondence, and asset references are persistent document data and require a versioned AniCraft-owned extension boundary. Do not create a second project file format or VFS.
+Transient selection, hover, active tool, and preview overlays remain UI state. Authored view sets, Smart Bone definitions, Switch Group configuration, landmark correspondence, and asset references are persistent document data and require a versioned AniCraft-owned extension boundary. Do not create a second native AniCraft document format or VFS. Studio may provide the optional ZIP-based `.anicraft360` project exchange package described in [ASSET_AND_PACKAGE_FORMATS.md](docs/ASSET_AND_PACKAGE_FORMATS.md); it is not a replacement for AniCraft's native document format.
+
+### 4.6 Asset formats and project exchange
+
+Use established creative formats for artwork rather than inventing a proprietary artwork format: SVG for editable vector artwork, PSD for layered raster artwork, BLEND for optional 3D source/reference projects, and PNG for raster artwork and previews. Import/export support is planned and must be verified per format and feature set; listing a format here is not a claim that an importer or exporter is implemented.
+
+Studio-specific identity, variations, asset relationships, rigging references, Switch Groups, and turnaround metadata use versioned UTF-8 JSON. Managed project copies are the default asset-storage mode; linked external files are an explicit opt-in with missing-link and portability diagnostics. `.anicraft360` is an optional ZIP-based exchange package containing a manifest, Studio metadata, and selected artwork/dependencies. It is not the native AniCraft document format and does not replace AniCraft's VFS or persistence.
+
+See [ASSET_AND_PACKAGE_FORMATS.md](docs/ASSET_AND_PACKAGE_FORMATS.md) for the accepted format matrix, storage modes, metadata responsibilities, variation identity rules, package manifest, import/export contract, and validation requirements.
 
 ## 5. Code-reuse and integration matrix
 
