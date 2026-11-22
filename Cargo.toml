@@ -1,6 +1,6 @@
 [workspace]
 resolver = "3"
-members = ["crates/anicraft-360-ui"]
+members = ["crates/anicraft-360-ui", "crates/anicraft-360-model"]
 
 [workspace.package]
 edition = "2024"
@@ -10,3 +10,5 @@ rust-version = "1.95"
 [workspace.dependencies]
 # Keep aligned with the egui version used by the AniCraft host.
 egui = "0.36"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"

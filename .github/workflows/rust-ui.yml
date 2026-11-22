@@ -6,6 +6,7 @@ on:
       - "Cargo.toml"
       - "Cargo.lock"
       - "crates/anicraft-360-ui/**"
+      - "crates/anicraft-360-model/**"
       - ".github/workflows/rust-ui.yml"
   push:
     branches:
@@ -16,7 +17,7 @@ permissions:
 
 jobs:
   ui:
-    name: Check native egui UI crate
+    name: Check Studio UI and character model crates
     runs-on: ubuntu-latest
     steps:
       - name: Check out source
@@ -33,6 +34,6 @@ jobs:
         continue-on-error: true
         run: cargo fmt --all -- --check
       - name: Run tests
-        run: cargo test -p anicraft-360-ui
+        run: cargo test --workspace
       - name: Run Clippy
-        run: cargo clippy -p anicraft-360-ui --all-targets -- -D warnings
+        run: cargo clippy --workspace --all-targets -- -D warnings

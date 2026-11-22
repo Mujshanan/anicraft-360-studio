@@ -1,7 +1,7 @@
 # AniCraft 360 Studio — Development and Architecture
 
 **Project role:** native AniCraft character-authoring workspace/plugin.  
-**Status:** architecture proposal plus native egui 0.36 panel library; live AniCraft panel registration and host adapter are not yet implemented.  
+**Status:** native egui 0.36 panel library and first versioned character-domain model implemented on feature branches; host persistence adapter and complete native integration remain in progress.  
 **Scope:** modular character/symbol rigging, Smart Bones, Switch Groups, asset library workflows, and multi-view/360° character authoring.
 
 ## 1. Product definition
@@ -150,7 +150,7 @@ These are research references, not dependencies or approved code imports.
 | Milestone | Scope | Exit criteria |
 |---|---|---|
 | M0 — Host contract map | Symbol, bone, timeline, VFS, undo, command, extension storage, evaluator APIs | Supported and missing capabilities documented with source references |
-| M1 — Character model | ViewSet, TurnAngle, ViewKey, Landmark, SmartBoneDefinition, SwitchGroup schemas | Versioned, validated, stable IDs; no host internals leaked |
+| M1 — Character model | `anicraft-360-model`: CharacterDocument, CharacterPart, ViewSet, CharacterView, LandmarkTrack, SmartBoneDefinition, SwitchGroup and AssetReference | Domain model, stable typed IDs, validation and JSON round-trip implemented; host persistence adapter/migrations remain |
 | M2 — Workspace shell | Hierarchy, stage context, view rail, properties, asset panel | Native AniCraft panels; no duplicate timeline or VFS |
 | M3 — Symbol and Switch Groups | Organize character parts and discrete alternatives | Stable option identity, persistence and undo tests |
 | M4 — Smart Bone authoring | Bind canonical bones/actions to ControllerIds | Forma Deform owns controller semantics; preview limitations explicit |
@@ -201,3 +201,28 @@ This implementation status does not imply that the host adapter, character schem
 - No PR merge or AniCraft host change is authorized by this plan.
 
 This document defines ownership and a proposed roadmap. It does not mean listed features are implemented.
+
+
+## 10. M1 implementation status
+
+The `anicraft-360-model` workspace crate implements schema version 1 of the persistent Studio-owned character extension. It defines typed identities for Studio entities and distinct wrappers for AniCraft and Forma Deform references.
+
+Implemented:
+- Character aggregate and modular part hierarchy.
+- View sets, explicit turn direction, zero-angle view and discrete authored views.
+- Stable landmark tracks with normalized per-view positions.
+- Smart Bone authoring metadata referencing canonical host bone, ControllerId and deformation target identities.
+- Switch Groups with explicit defaults, option identity and optional view association.
+- Host asset references.
+- Validation for duplicate/empty identities, parent references/cycles, view references, angle range/uniqueness, landmark coordinates, Smart Bone ranges, Switch Group defaults and asset metadata.
+- Validated JSON serialization/deserialization; unsupported schema versions fail closed.
+- Unit tests for round trips and key invalid-data cases.
+
+Not yet implemented:
+- AniCraft-owned persistence slot and versioned extension registration.
+- Host commands/transactions for create, update and delete.
+- Undo/redo and save/reopen integration tests.
+- Schema migration framework beyond the current version gate.
+- Projection adapter from `CharacterDocument` into `StudioUiModel`.
+
+See [docs/CHARACTER_DATA_MODEL.md](docs/CHARACTER_DATA_MODEL.md). The domain crate intentionally does not resolve external host IDs; the AniCraft adapter must verify symbol, bone, asset, controller and deformation-target references against their authoritative owners.
