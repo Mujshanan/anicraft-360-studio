@@ -559,8 +559,8 @@ mod tests {
             direction: TurnDirection::Clockwise,
             zero_angle_view_id: front.clone(),
             views: vec![
-                CharacterView { id: front.clone(), name: "Front".into(), angle_degrees: 0.0, artwork_symbol_id: None },
-                CharacterView { id: side.clone(), name: "Side".into(), angle_degrees: 90.0, artwork_symbol_id: Some(HostSymbolId::from("symbol-side")) },
+                CharacterView { id: front.clone(), name: "Front".into(), angle_degrees: 0.0, artwork_symbol_id: None, notes: String::new() },
+                CharacterView { id: side.clone(), name: "Side".into(), angle_degrees: 90.0, artwork_symbol_id: Some(HostSymbolId::from("symbol-side")), notes: String::new() },
             ],
             landmarks: vec![LandmarkTrack {
                 id: LandmarkId::from("landmark-nose"),
@@ -615,11 +615,10 @@ mod tests {
     #[test]
     fn rejects_duplicate_or_out_of_range_view_angles() {
         let mut document = valid_document();
-        let set = &mut document.view_sets[0];
-        set.views[1].angle_degrees = 360.0;
+        document.view_sets[0].views[1].angle_degrees = 360.0;
         let errors = document.validate().expect_err("360 is outside normalized range");
         assert!(errors.iter().any(|error| error.code == "view.angle.invalid"));
-        set.views[1].angle_degrees = ANGLE_EPSILON_DEGREES / 2.0;
+        document.view_sets[0].views[1].angle_degrees = ANGLE_EPSILON_DEGREES / 2.0;
         let errors = document.validate().expect_err("coincident views must fail");
         assert!(errors.iter().any(|error| error.code == "view.angle.duplicate"));
     }
