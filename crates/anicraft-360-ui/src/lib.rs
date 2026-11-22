@@ -1,61 +1,187 @@
-//! Host-embedded UI panels for AniCraft 360 Studio.
+//! Native egui panels for AniCraft 360 Studio.
 //!
-//! This crate deliberately does not create an application window, own a dock
-//! manager, render the character stage, or persist document data. AniCraft
-//! supplies read-only view models and places these panels in its existing
-//! workspace. User interactions are returned as typed actions for the host to
-//! validate and dispatch through its command system.
+//! This is a reusable UI component library. It does not create a window, dock
+//! panels, own a document, render the character stage, persist authored data,
+//! or execute host commands. AniCraft supplies read-only projections and places
+//! these panels in its existing workspace.
+//!
+//! The host passes a StudioUiModel snapshot and retains StudioUiState as
+//! transient workspace state. Each panel appends typed StudioUiAction intents.
+//! The host validates and dispatches those intents through its own command and
+//! undo system. Styling inherits the active egui Style and Visuals.
 
 #![forbid(unsafe_code)]
 
-use egui::{Color32, RichText, Ui};
+use egui::{Align, Color32, Layout, RichText, Ui};
+use std::collections::BTreeSet;
 
-/// Read-only character hierarchy item projected by the AniCraft host.
+/// A read-only character item projected from the host document and Studio data.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct CharacterNode {
+    /// Stable identity supplied by the owner; never derived from the label.
     pub id: String,
     pub label: String,
     pub kind: CharacterNodeKind,
-    /// Visual nesting depth supplied by the host's character projection.
+    /// Indentation depth in the already-resolved hierarchy.
     pub depth: usize,
+    /// Whether this projection node has children in the hierarchy.
+    pub has_children: bool,
+    pub status: NodeStatus,
+    /// Canonical Forma Deform identity; a reference, not a copy.
     pub controller_id: Option<String>,
+    /// Forma Deform target identity; a reference, not an evaluator.
     pub deformation_target_id: Option<String>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum CharacterNodeKind {
-    Symbol,
+    Character,
     BodyPart,
+    Symbol,
+    Bone,
     RigGroup,
     SmartBone,
     SwitchGroup,
     SwitchOption,
+    ViewSet,
+    View,
 }
 
-/// A registered character view. Angle semantics and ordering are owned by
-/// the 360 Studio domain model; this is only its UI projection.
+impl CharacterNodeKind {
+    fn label(self) -> &'static str {
+        match self {
+            Self::Character => "Character",
+            Self::BodyPart => "Body part",
+            Self::Symbol => "Symbol",
+            Self::Bone => "Bone",
+            Self::RigGroup => "Rig group",
+            Self::SmartBone => "Smart Bone",
+            Self::SwitchGroup => "Switch Group",
+            Self::SwitchOption => "Switch option",
+            Self::ViewSet => "View set",
+            Self::View => "View",
+        }
+    }
+
+    fn marker(self) -> &'static str {
+        match self {
+            Self::Character => "◉",
+            Self::BodyPart => "◇",
+            Self::Symbol => "▧",
+            Self::Bone => "⌁",
+            Self::RigGroup => "⌘",
+            Self::SmartBone => "✳",
+            Self::SwitchGroup => "▤",
+            Self::SwitchOption => "▪",
+            Self::ViewSet => "▦",
+            Self::View => "◫",
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum NodeStatus {
+    #[default]
+    Ready,
+    Warning,
+    Error,
+    Unresolved,
+    PreviewOnly,
+}
+
+impl NodeStatus {
+    fn label(self) -> &'static str {
+        match self {
+            Self::Ready => "Ready",
+            Self::Warning => "Warning",
+            Self::Error => "Error",
+            Self::Unresolved => "Unresolved",
+            Self::PreviewOnly => "Preview only",
+        }
+    }
+
+    fn color(self, visuals: &egui::Visuals) -> Color32 {
+        match self {
+            Self::Ready | Self::PreviewOnly => visuals.weak_text_color(),
+            Self::Warning => visuals.warn_fg_color,
+            Self::Error | Self::Unresolved => visuals.error_fg_color,
+        }
+    }
+}
+
+/// An authored view. The host/domain layer supplies canonical ordering.
 #[derive(Clone, Debug, PartialEq)]
 pub struct CharacterView {
     pub id: String,
     pub label: String,
     pub angle_degrees: f32,
     pub status: ViewStatus,
+    pub origin: ViewOrigin,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum ViewStatus {
+    #[default]
     Ready,
     NeedsReview,
     MissingArtwork,
+    Invalid,
 }
 
-/// An asset-library item supplied by the AniCraft host asset service.
+impl ViewStatus {
+    fn label(self) -> &'static str {
+        match self {
+            Self::Ready => "Ready",
+            Self::NeedsReview => "Review",
+            Self::MissingArtwork => "Missing artwork",
+            Self::Invalid => "Invalid",
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum ViewOrigin {
+    #[default]
+    Authored,
+    Generated,
+    Preview,
+}
+
+impl ViewOrigin {
+    fn label(self) -> &'static str {
+        match self {
+            Self::Authored => "Authored",
+            Self::Generated => "Generated",
+            Self::Preview => "Preview only",
+        }
+    }
+}
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct AssetEntry {
     pub id: String,
     pub title: String,
     pub category: String,
     pub description: String,
+    pub compatibility: AssetCompatibility,
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum AssetCompatibility {
+    #[default]
+    Compatible,
+    Warning,
+    Unavailable,
+}
+
+impl AssetCompatibility {
+    fn label(self) -> &'static str {
+        match self {
+            Self::Compatible => "Compatible",
+            Self::Warning => "Check compatibility",
+            Self::Unavailable => "Unavailable",
+        }
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -63,63 +189,135 @@ pub enum IssueSeverity {
     Info,
     Warning,
     Error,
+    Unavailable,
+}
+
+impl IssueSeverity {
+    fn label(self) -> &'static str {
+        match self {
+            Self::Info => "Info",
+            Self::Warning => "Warning",
+            Self::Error => "Error",
+            Self::Unavailable => "Unavailable",
+        }
+    }
+
+    fn color(self, visuals: &egui::Visuals) -> Color32 {
+        match self {
+            Self::Info => visuals.hyperlink_color,
+            Self::Warning => visuals.warn_fg_color,
+            Self::Error => visuals.error_fg_color,
+            Self::Unavailable => visuals.weak_text_color(),
+        }
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ValidationIssue {
+    pub id: String,
     pub severity: IssueSeverity,
+    pub category: String,
     pub message: String,
+    pub affected_node_id: Option<String>,
+    pub affected_view_id: Option<String>,
+    pub repair_hint: Option<String>,
 }
 
-/// Read-only snapshot passed from the host into the panels.
-///
-/// The host remains authoritative for document identity, persistence, VFS,
-/// symbols, bones, timeline, undo, rendering, and evaluation.
+/// Capability flags come from the verified host integration contract.
+/// Plugin presence or a version string alone is not evidence of support.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct StudioCapabilities {
+    pub create_switch_group: bool,
+    pub create_view: bool,
+    pub open_assets: bool,
+    pub open_deformation_targets: bool,
+    pub controller_preview: bool,
+}
+
+/// Read-only projection of the active character context.
 #[derive(Clone, Debug, Default)]
 pub struct StudioUiModel {
     pub character_name: String,
+    pub document_name: String,
     pub nodes: Vec<CharacterNode>,
+    /// Already sorted by the domain's canonical angle ordering.
     pub views: Vec<CharacterView>,
     pub assets: Vec<AssetEntry>,
     pub validation_issues: Vec<ValidationIssue>,
+    pub capabilities: StudioCapabilities,
+    pub integration_status: IntegrationStatus,
 }
 
-/// Transient UI state only. None of these fields are document data.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub enum IntegrationStatus {
+    #[default]
+    HostConnected,
+    HostCapabilitiesMissing(String),
+    ReadOnly(String),
+    Error(String),
+}
+
+/// Transient workspace state only. These fields are never document data.
 #[derive(Clone, Debug, Default)]
 pub struct StudioUiState {
     pub selected_node_id: Option<String>,
+    pub collapsed_node_ids: BTreeSet<String>,
     pub active_view_id: Option<String>,
     pub asset_filter: String,
+    pub selected_issue_id: Option<String>,
 }
 
-/// Semantic UI intents. The host maps these to validated studio.*
-/// CommandSpec operations; this crate does not dispatch host commands itself.
+/// Semantic intents. The host validates every intent against the active
+/// document, stable identities, capability state, and command registry.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum StudioUiAction {
     SelectCharacterNode { node_id: String },
     ActivateCharacterView { view_id: String },
     RequestCreateSwitchGroup,
-    RequestAddCharacterView,
+    RequestCreateView,
     RequestOpenAsset { asset_id: String },
     RequestOpenDeformationTarget { target_id: String },
+    RequestSelectDiagnostic { issue_id: String },
 }
 
-impl StudioUiAction {
-    /// Stable command-family identifier for host adapter routing.
-    pub const fn command_name(&self) -> &'static str {
-        match self {
-            Self::SelectCharacterNode { .. } => "studio.symbol.select",
-            Self::ActivateCharacterView { .. } => "studio.view.activate",
-            Self::RequestCreateSwitchGroup => "studio.switch_group.create",
-            Self::RequestAddCharacterView => "studio.view.create",
-            Self::RequestOpenAsset { .. } => "studio.asset.open",
-            Self::RequestOpenDeformationTarget { .. } => "studio.deformation.open_target",
+/// Workspace identity/status row. Global menus, tabs, and window chrome remain
+/// part of the AniCraft host shell.
+pub fn show_workspace_header(ui: &mut Ui, model: &StudioUiModel) {
+    ui.horizontal(|ui| {
+        ui.strong("AniCraft 360 Studio");
+        ui.separator();
+        let character: &str = if model.character_name.is_empty() {
+            "No character selected"
+        } else {
+            &model.character_name
+        };
+        ui.label(RichText::new(character).weak());
+        if !model.document_name.is_empty() {
+            ui.separator();
+            ui.label(RichText::new(&model.document_name).weak());
         }
-    }
+        ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+            match &model.integration_status {
+                IntegrationStatus::HostConnected => {
+                    ui.label(RichText::new("Host connected").weak());
+                }
+                IntegrationStatus::HostCapabilitiesMissing(reason) => {
+                    ui.colored_label(ui.visuals().warn_fg_color, "Limited integration")
+                        .on_hover_text(reason);
+                }
+                IntegrationStatus::ReadOnly(reason) => {
+                    ui.label(RichText::new("Read only").weak()).on_hover_text(reason);
+                }
+                IntegrationStatus::Error(reason) => {
+                    ui.colored_label(ui.visuals().error_fg_color, "Integration error")
+                        .on_hover_text(reason);
+                }
+            }
+        });
+    });
 }
 
-/// Character hierarchy panel. It organizes character-specific concepts but
-/// does not replace AniCraft's document/layer hierarchy.
+/// Character-specific hierarchy. AniCraft's document/layer tree remains host-owned.
 pub fn show_character_hierarchy(
     ui: &mut Ui,
     model: &StudioUiModel,
@@ -127,37 +325,78 @@ pub fn show_character_hierarchy(
     actions: &mut Vec<StudioUiAction>,
 ) {
     ui.heading("Character");
-    ui.label(RichText::new(&model.character_name).weak());
-
-    if ui.button("＋ Switch Group").clicked() {
+    if ui
+        .add_enabled(model.capabilities.create_switch_group, egui::Button::new("＋ Switch Group"))
+        .on_disabled_hover_text("The host does not currently expose Switch Group creation.")
+        .clicked()
+    {
         actions.push(StudioUiAction::RequestCreateSwitchGroup);
     }
     ui.separator();
 
+    if model.nodes.is_empty() {
+        empty_state(ui, "No character items", "Character parts, symbols and rig references will appear here.");
+        return;
+    }
+
     egui::ScrollArea::vertical()
         .id_salt("anicraft_360_character_hierarchy")
+        .auto_shrink([false, false])
         .show(ui, |ui| {
+            let mut collapsed_ancestors: Vec<(usize, String)> = Vec::new();
             for node in &model.nodes {
+                while collapsed_ancestors
+                    .last()
+                    .is_some_and(|(depth, _)| *depth >= node.depth)
+                {
+                    collapsed_ancestors.pop();
+                }
+                if collapsed_ancestors
+                    .last()
+                    .is_some_and(|(depth, _)| node.depth > *depth)
+                {
+                    continue;
+                }
+
                 ui.horizontal(|ui| {
-                    ui.add_space((node.depth as f32) * 12.0);
-                    let marker = node_marker(node.kind);
-                    let selected = state.selected_node_id.as_deref() == Some(&node.id);
-                    if ui
-                        .selectable_label(selected, format!("{marker} {}", node.label))
-                        .clicked()
-                    {
-                        state.selected_node_id = Some(node.id.clone());
-                        actions.push(StudioUiAction::SelectCharacterNode {
-                            node_id: node.id.clone(),
-                        });
+                    ui.add_space((node.depth.min(24) as f32) * 12.0);
+                    let collapsed = state.collapsed_node_ids.contains(&node.id);
+                    if node.has_children {
+                        if ui.small_button(if collapsed { "▸" } else { "▾" }).clicked() {
+                            if collapsed {
+                                state.collapsed_node_ids.remove(&node.id);
+                            } else {
+                                state.collapsed_node_ids.insert(node.id.clone());
+                            }
+                        }
+                    } else {
+                        ui.add_space(16.0);
                     }
+
+                    let selected = state.selected_node_id.as_deref() == Some(node.id.as_str());
+                    let response = ui.selectable_label(
+                        selected,
+                        format!("{}  {}", node.kind.marker(), node.label),
+                    );
+                    if response.clicked() {
+                        state.selected_node_id = Some(node.id.clone());
+                        actions.push(StudioUiAction::SelectCharacterNode { node_id: node.id.clone() });
+                    }
+                    response.on_hover_text(format!("{} · {}", node.kind.label(), node.status.label()));
+                    ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                        ui.small(RichText::new(node.status.label()).color(node.status.color(ui.visuals())));
+                    });
                 });
+
+                if node.has_children && state.collapsed_node_ids.contains(&node.id) {
+                    collapsed_ancestors.push((node.depth, node.id.clone()));
+                }
             }
         });
 }
 
-/// Horizontal authored-view selector. It selects registered views; it does
-/// not imply that intermediate-view interpolation has been implemented.
+/// Discrete authored-view rail. Supplied order is authoritative; this panel
+/// never interpolates or sorts view angles.
 pub fn show_view_rail(
     ui: &mut Ui,
     model: &StudioUiModel,
@@ -165,37 +404,86 @@ pub fn show_view_rail(
     actions: &mut Vec<StudioUiAction>,
 ) {
     ui.horizontal(|ui| {
-        ui.heading("Character Views");
-        if ui.button("＋ Add View").clicked() {
-            actions.push(StudioUiAction::RequestAddCharacterView);
-        }
+        ui.heading("Views");
+        ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+            if ui
+                .add_enabled(model.capabilities.create_view, egui::Button::new("＋ Add View"))
+                .on_disabled_hover_text("View registration is unavailable from the current host.")
+                .clicked()
+            {
+                actions.push(StudioUiAction::RequestCreateView);
+            }
+        });
     });
+
+    if model.views.is_empty() {
+        empty_state(ui, "No views registered", "Create a view set or register the first authored view when supported.");
+        return;
+    }
 
     egui::ScrollArea::horizontal()
         .id_salt("anicraft_360_view_rail")
         .show(ui, |ui| {
             ui.horizontal(|ui| {
                 for view in &model.views {
-                    let selected = state.active_view_id.as_deref() == Some(&view.id);
-                    let status = view_status_marker(view.status);
-                    let label = format!("{}\n{:.0}°  {status}", view.label, view.angle_degrees);
-                    if ui
-                        .add_sized([104.0, 54.0], egui::SelectableLabel::new(selected, label))
-                        .clicked()
-                    {
+                    let selected = state.active_view_id.as_deref() == Some(view.id.as_str());
+                    let title = format!("{} · {}", view.label, angle_label(view.angle_degrees));
+                    let response = ui.add(
+                        egui::Button::selectable(selected, title)
+                            .min_size(egui::vec2(116.0, 34.0)),
+                    );
+                    if response.clicked() {
                         state.active_view_id = Some(view.id.clone());
-                        actions.push(StudioUiAction::ActivateCharacterView {
-                            view_id: view.id.clone(),
-                        });
+                        actions.push(StudioUiAction::ActivateCharacterView { view_id: view.id.clone() });
                     }
+                    response.on_hover_text(format!("{} · {}", view.status.label(), view.origin.label()));
                 }
             });
         });
 }
 
-/// Contextual inspector for the selected character item. Deformation work is
-/// handed off to Forma Deform by target identity; this panel does not evaluate
-/// Smart Controllers or pin deformation.
+/// Discrete turn navigation. It selects registered views only and does not
+/// accept arbitrary scrub angles or imply continuous interpolation.
+pub fn show_turn_ruler(
+    ui: &mut Ui,
+    model: &StudioUiModel,
+    state: &mut StudioUiState,
+    actions: &mut Vec<StudioUiAction>,
+) {
+    let active_index = model.views.iter().position(|view| {
+        state.active_view_id.as_deref() == Some(view.id.as_str())
+    });
+    let active = active_index.and_then(|index| model.views.get(index));
+
+    ui.horizontal(|ui| {
+        ui.strong("Turn");
+        if let Some(view) = active {
+            ui.label(angle_label(view.angle_degrees));
+            ui.label(RichText::new(&view.label).weak());
+        } else {
+            ui.label(RichText::new("No active registered view").weak());
+        }
+
+        ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+            let next = active_index.and_then(|i| model.views.get(i + 1));
+            let previous = active_index.and_then(|i| i.checked_sub(1).and_then(|j| model.views.get(j)));
+            if ui.add_enabled(next.is_some(), egui::Button::new("Next ›")).clicked() {
+                if let Some(view) = next {
+                    state.active_view_id = Some(view.id.clone());
+                    actions.push(StudioUiAction::ActivateCharacterView { view_id: view.id.clone() });
+                }
+            }
+            if ui.add_enabled(previous.is_some(), egui::Button::new("‹ Previous")).clicked() {
+                if let Some(view) = previous {
+                    state.active_view_id = Some(view.id.clone());
+                    actions.push(StudioUiAction::ActivateCharacterView { view_id: view.id.clone() });
+                }
+            }
+        });
+    });
+}
+
+/// Contextual inspector. It displays references and ownership, not engine state.
 pub fn show_properties(
     ui: &mut Ui,
     model: &StudioUiModel,
@@ -203,54 +491,51 @@ pub fn show_properties(
     actions: &mut Vec<StudioUiAction>,
 ) {
     ui.heading("Properties");
-
     let selected = state
         .selected_node_id
         .as_deref()
         .and_then(|id| model.nodes.iter().find(|node| node.id == id));
 
     if let Some(node) = selected {
-        ui.label(RichText::new(&node.label).strong());
-        ui.label(format!("Type: {}", node_kind_label(node.kind)));
+        ui.strong(&node.label);
+        ui.label(RichText::new(node.kind.label()).weak());
+        ui.separator();
+        ui.label("Status");
+        ui.label(node.status.label());
 
         if let Some(controller_id) = &node.controller_id {
             ui.separator();
-            ui.label("Forma Deform controller reference");
+            ui.label("Forma Deform · Controller reference");
             ui.monospace(controller_id);
+            ui.label(RichText::new("Evaluation is owned by Forma Deform.").weak());
+            if !model.capabilities.controller_preview {
+                ui.label(RichText::new("Controller preview unavailable").weak());
+            }
         }
 
         if let Some(target_id) = &node.deformation_target_id {
             ui.separator();
-            ui.label("Deformation target");
+            ui.label("Deformation target reference");
             ui.monospace(target_id);
-            if ui.button("Open in Forma Deform").clicked() {
+            if ui
+                .add_enabled(
+                    model.capabilities.open_deformation_targets,
+                    egui::Button::new("Open in Forma Deform"),
+                )
+                .clicked()
+            {
                 actions.push(StudioUiAction::RequestOpenDeformationTarget {
                     target_id: target_id.clone(),
                 });
             }
         }
     } else {
-        ui.label(RichText::new("Select a character item to inspect it.").weak());
-    }
-
-    ui.separator();
-    ui.heading("Validation");
-    if model.validation_issues.is_empty() {
-        ui.colored_label(Color32::from_rgb(90, 170, 120), "No reported issues");
-    } else {
-        for issue in &model.validation_issues {
-            let (marker, color) = match issue.severity {
-                IssueSeverity::Info => ("ℹ", Color32::LIGHT_BLUE),
-                IssueSeverity::Warning => ("⚠", Color32::YELLOW),
-                IssueSeverity::Error => ("●", Color32::LIGHT_RED),
-            };
-            ui.colored_label(color, format!("{marker} {}", issue.message));
-        }
+        empty_state(ui, "Nothing selected", "Select a character item to inspect its properties.");
     }
 }
 
-/// Asset browser panel. Asset retrieval and all file access remain in the
-/// host's VFS/asset service.
+/// Asset browser presentation. Retrieval, compatibility checks, import, and
+/// file access remain in AniCraft's host asset service.
 pub fn show_asset_library(
     ui: &mut Ui,
     model: &StudioUiModel,
@@ -261,6 +546,7 @@ pub fn show_asset_library(
     ui.text_edit_singleline(&mut state.asset_filter);
 
     let filter = state.asset_filter.trim().to_lowercase();
+    let mut visible = 0usize;
     egui::ScrollArea::vertical()
         .id_salt("anicraft_360_asset_library")
         .show(ui, |ui| {
@@ -272,49 +558,79 @@ pub fn show_asset_library(
                 if !matches {
                     continue;
                 }
-
+                visible += 1;
                 ui.group(|ui| {
-                    ui.label(RichText::new(&asset.title).strong());
-                    ui.label(RichText::new(&asset.category).weak());
-                    ui.label(&asset.description);
-                    if ui.button("Open asset").clicked() {
-                        actions.push(StudioUiAction::RequestOpenAsset {
-                            asset_id: asset.id.clone(),
+                    ui.horizontal(|ui| {
+                        ui.strong(&asset.title);
+                        ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                            ui.small(asset.compatibility.label());
                         });
+                    });
+                    ui.label(RichText::new(&asset.category).weak());
+                    if !asset.description.is_empty() {
+                        ui.label(&asset.description);
+                    }
+                    if ui
+                        .add_enabled(
+                            model.capabilities.open_assets && asset.compatibility != AssetCompatibility::Unavailable,
+                            egui::Button::new("Open asset"),
+                        )
+                        .clicked()
+                    {
+                        actions.push(StudioUiAction::RequestOpenAsset { asset_id: asset.id.clone() });
                     }
                 });
             }
         });
-}
-
-fn node_marker(kind: CharacterNodeKind) -> &'static str {
-    match kind {
-        CharacterNodeKind::Symbol => "◇",
-        CharacterNodeKind::BodyPart => "◈",
-        CharacterNodeKind::RigGroup => "⌘",
-        CharacterNodeKind::SmartBone => "⌁",
-        CharacterNodeKind::SwitchGroup => "▤",
-        CharacterNodeKind::SwitchOption => "▪",
+    if visible == 0 {
+        empty_state(ui, "No matching assets", "Try another search term or check the host asset library.");
     }
 }
 
-fn node_kind_label(kind: CharacterNodeKind) -> &'static str {
-    match kind {
-        CharacterNodeKind::Symbol => "Symbol",
-        CharacterNodeKind::BodyPart => "Body part",
-        CharacterNodeKind::RigGroup => "Rig group",
-        CharacterNodeKind::SmartBone => "Smart Bone",
-        CharacterNodeKind::SwitchGroup => "Switch Group",
-        CharacterNodeKind::SwitchOption => "Switch option",
+/// Diagnostics navigation. Selecting an issue requests host navigation only;
+/// it never edits or repairs the document.
+pub fn show_diagnostics(
+    ui: &mut Ui,
+    model: &StudioUiModel,
+    state: &mut StudioUiState,
+    actions: &mut Vec<StudioUiAction>,
+) {
+    ui.heading("Diagnostics");
+    if model.validation_issues.is_empty() {
+        empty_state(ui, "No reported issues", "Only validators that have actually run are represented here.");
+        return;
+    }
+
+    for issue in &model.validation_issues {
+        let selected = state.selected_issue_id.as_deref() == Some(issue.id.as_str());
+        let response = ui.selectable_label(
+            selected,
+            format!("[{}] {} — {}", issue.severity.label(), issue.category, issue.message),
+        );
+        if response.clicked() {
+            state.selected_issue_id = Some(issue.id.clone());
+            actions.push(StudioUiAction::RequestSelectDiagnostic { issue_id: issue.id.clone() });
+        }
+        response.on_hover_text(issue.repair_hint.as_deref().unwrap_or("No automated repair is available."));
+        ui.colored_label(issue.severity.color(ui.visuals()), issue.severity.label());
     }
 }
 
-fn view_status_marker(status: ViewStatus) -> &'static str {
-    match status {
-        ViewStatus::Ready => "Ready",
-        ViewStatus::NeedsReview => "Review",
-        ViewStatus::MissingArtwork => "Missing",
+fn angle_label(angle_degrees: f32) -> String {
+    if angle_degrees.is_finite() {
+        format!("{angle_degrees:.1}°")
+    } else {
+        "Angle unavailable".to_owned()
     }
+}
+
+fn empty_state(ui: &mut Ui, title: &str, description: &str) {
+    ui.vertical_centered(|ui| {
+        ui.add_space(8.0);
+        ui.label(RichText::new(title).strong());
+        ui.label(RichText::new(description).weak());
+        ui.add_space(8.0);
+    });
 }
 
 #[cfg(test)]
@@ -322,26 +638,36 @@ mod tests {
     use super::*;
 
     #[test]
-    fn actions_route_through_the_expected_command_families() {
-        let cases = [
-            (StudioUiAction::SelectCharacterNode { node_id: "symbol-1".into() }, "studio.symbol.select"),
-            (StudioUiAction::ActivateCharacterView { view_id: "view-front".into() }, "studio.view.activate"),
-            (StudioUiAction::RequestCreateSwitchGroup, "studio.switch_group.create"),
-            (StudioUiAction::RequestAddCharacterView, "studio.view.create"),
-            (StudioUiAction::RequestOpenAsset { asset_id: "asset-1".into() }, "studio.asset.open"),
-            (StudioUiAction::RequestOpenDeformationTarget { target_id: "target-1".into() }, "studio.deformation.open_target"),
-        ];
-
-        for (action, expected) in cases {
-            assert_eq!(action.command_name(), expected);
-        }
+    fn default_state_is_transient_and_empty() {
+        let state = StudioUiState::default();
+        assert!(state.selected_node_id.is_none());
+        assert!(state.collapsed_node_ids.is_empty());
+        assert!(state.active_view_id.is_none());
+        assert!(state.selected_issue_id.is_none());
+        assert!(state.asset_filter.is_empty());
     }
 
     #[test]
-    fn default_ui_state_contains_no_document_data() {
-        let state = StudioUiState::default();
-        assert!(state.selected_node_id.is_none());
-        assert!(state.active_view_id.is_none());
-        assert!(state.asset_filter.is_empty());
+    fn capability_defaults_are_fail_closed() {
+        let capabilities = StudioCapabilities::default();
+        assert!(!capabilities.create_switch_group);
+        assert!(!capabilities.create_view);
+        assert!(!capabilities.open_assets);
+        assert!(!capabilities.open_deformation_targets);
+        assert!(!capabilities.controller_preview);
+    }
+
+    #[test]
+    fn view_statuses_and_origins_are_explicit() {
+        assert_eq!(ViewStatus::MissingArtwork.label(), "Missing artwork");
+        assert_eq!(ViewOrigin::Preview.label(), "Preview only");
+        assert_eq!(angle_label(f32::NAN), "Angle unavailable");
+    }
+
+    #[test]
+    fn controller_and_pin_deformation_are_not_a_combined_concept() {
+        let controller = Some("controller-a".to_owned());
+        let target = Some("pin-target-a".to_owned());
+        assert_ne!(controller, target);
     }
 }

@@ -1,11 +1,12 @@
 [workspace]
-resolver = "2"
+resolver = "3"
 members = ["crates/anicraft-360-ui"]
 
 [workspace.package]
 edition = "2024"
-license = "MIT"
-rust-version = "1.85"
+license = "MIT OR Apache-2.0"
+rust-version = "1.95"
 
 [workspace.dependencies]
-egui = "0.31"
+# Keep aligned with the egui version used by the AniCraft host.
+egui = "0.36"

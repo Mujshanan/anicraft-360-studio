@@ -4,6 +4,12 @@
 
 It organizes how a character is assembled, controlled, and represented across views. It is not a second animation application, renderer, timeline, or deformation engine.
 
+## UI implementation status
+
+The native egui panel library is being developed in `crates/anicraft-360-ui` and targets egui 0.36 to match AniCraft. It inherits the host theme and leaves docking, the stage, timeline, document state, persistence, undo, and command execution to AniCraft.
+
+The current AniCraft plugin ABI does not yet support arbitrary native UI panels. A host-owned panel extension point is required before this UI can be installed as a plugin. The same panel library is intended to be linked into AniCraft for the later native stage. See [the host UI integration contract](docs/HOST_UI_INTEGRATION.md).
+
 ## Product responsibilities
 
 - Modular symbol and character-part organization.
