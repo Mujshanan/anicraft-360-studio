@@ -609,6 +609,46 @@ pub fn show_properties(
 }
 
 
+/// Human-readable selection guidance; IDs remain available for precise host diagnostics.
+fn show_stage_selection_guidance(ui: &mut Ui, model: &StudioUiModel, purpose: &str) {
+    let count = model.selected_element_ids.len();
+    ui.group(|ui| {
+        ui.horizontal(|ui| {
+            ui.strong(format!("Stage selection · {count}"));
+            ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                ui.label(RichText::new(purpose).weak());
+            });
+        });
+        match count {
+            0 => ui.label(RichText::new("Nothing selected. Select artwork on the Stage to continue.").weak()),
+            1 => {
+                ui.label(format!("1. {}", model.selected_element_ids[0]));
+                ui.label(RichText::new("Select a second, different element.").weak());
+            }
+            _ => {
+                ui.label(format!("Parent / target: {}", model.selected_element_ids[0]));
+                ui.label(format!("Child / next target: {}", model.selected_element_ids[1]));
+                if count > 2 {
+                    ui.label(RichText::new(format!("{} additional selected element(s) will not be used for this action.", count - 2)).weak());
+                }
+            }
+        }
+    });
+}
+
+fn smart_bone_controller_status(bone: &SmartBoneEntry, preview_available: bool) -> (&'static str, &'static str) {
+    match (bone.controller_id.is_some(), preview_available) {
+        (true, true) => ("Controller bound · preview available", "Forma Deform owns controller evaluation."),
+        (true, false) => ("Controller bound · preview unavailable", "The controller reference is present, but the host has not exposed preview capability."),
+        (false, true) => ("No controller bound", "Bind a Forma Deform ControllerId to enable controller-driven preview."),
+        (false, false) => ("No controller bound", "Bind the controller in Forma Deform. Preview is not currently exposed by the host."),
+    }
+}
+
+fn switch_option_preview<'a>(group: &'a SwitchGroupEntry, selected_id: Option<&str>) -> Option<&'a SwitchOptionEntry> {
+    group.options.iter().find(|option| Some(option.id.as_str()) == selected_id)
+}
+
 fn can_create_smart_bone(model: &StudioUiModel, state: &StudioUiState) -> bool {
     model.capabilities.create_smart_bone
         && model.selected_element_ids.len() >= 2
@@ -644,11 +684,11 @@ pub fn show_smart_bone_editor(
             name: state.smart_bone_name.trim().to_owned(),
         });
     }
-    if model.selected_element_ids.len() < 2 {
-        ui.label(RichText::new("Select the parent artwork, then the child artwork on the Stage.").weak());
-    } else if model.selected_element_ids[0] == model.selected_element_ids[1] {
-        ui.colored_label(ui.visuals().warn_fg_color, "Choose two different Stage elements.");
-    } else if state.smart_bone_name.trim().is_empty() {
+    show_stage_selection_guidance(ui, model, "Smart Bone source");
+    if model.selected_element_ids.len() >= 2 && model.selected_element_ids[0] == model.selected_element_ids[1] {
+        ui.colored_label(ui.visuals().warn_fg_color, "The first two selections must be different elements.");
+    }
+    if state.smart_bone_name.trim().is_empty() {
         ui.colored_label(ui.visuals().warn_fg_color, "Enter a name before creating the Smart Bone.");
     }
     ui.separator();
@@ -692,11 +732,15 @@ pub fn show_smart_bone_editor(
                     }
                 });
                 ui.label(RichText::new(format!("Parent {} → child {}", bone.parent_element_id, bone.child_element_id)).weak());
+                let (status, detail) = smart_bone_controller_status(bone, model.capabilities.controller_preview);
+                ui.horizontal(|ui| {
+                    let color = if bone.controller_id.is_some() { ui.visuals().positive_text_color() } else { ui.visuals().warn_fg_color };
+                    ui.colored_label(color, status);
+                });
+                ui.label(RichText::new(detail).weak());
                 if let Some(controller) = &bone.controller_id {
                     ui.label("Forma Deform ControllerId");
                     ui.monospace(controller);
-                } else {
-                    ui.label(RichText::new("No Forma Deform controller bound").weak());
                 }
             }
             ui.separator();
@@ -724,6 +768,7 @@ pub fn show_switch_group_editor(
     if model.switch_groups.is_empty() {
         empty_state(ui, "No Switch Groups", "Create a group, then add symbol assets as its options.");
     }
+    show_stage_selection_guidance(ui, model, "Switch target");
     for group in &model.switch_groups {
         let selected = state.selected_switch_group_id.as_deref() == Some(group.id.as_str());
         if ui.selectable_label(selected, format!("▤ {}", group.name)).clicked() {
@@ -732,6 +777,23 @@ pub fn show_switch_group_editor(
             state.selected_switch_source_symbol_id = None;
         }
         if selected {
+            ui.group(|ui| {
+                ui.horizontal(|ui| {
+                    ui.strong(&group.name);
+                    ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                        ui.label(RichText::new(format!("{} option(s)", group.options.len())).weak());
+                    });
+                });
+                if let Some(option) = switch_option_preview(group, state.selected_switch_option_id.as_deref()) {
+                    ui.label("Selected option preview");
+                    ui.strong(&option.name);
+                    ui.label(RichText::new(format!("Symbol · {}", option.id)).weak());
+                } else if group.options.is_empty() {
+                    ui.label(RichText::new("This group has no options yet. Add a Library symbol below.").weak());
+                } else {
+                    ui.label(RichText::new("Choose an option to inspect it here.").weak());
+                }
+            });
             for option in &group.options {
                 if ui.selectable_label(state.selected_switch_option_id.as_deref() == Some(option.id.as_str()),
                     format!("  ▪ {}", option.name)).clicked() {
@@ -755,10 +817,16 @@ pub fn show_switch_group_editor(
                     actions.push(StudioUiAction::RequestAddSwitchOption { group_id: group.id.clone(), symbol_id });
                 }
             }
-            if let Some(option_id) = state.selected_switch_option_id.as_deref()
-                && ui.add_enabled(!model.selected_element_ids.is_empty(), egui::Button::new("Activate on Stage selection")).clicked()
-            {
-                actions.push(StudioUiAction::RequestActivateSwitchOption { symbol_id: option_id.to_owned() });
+            let selected_option = switch_option_preview(group, state.selected_switch_option_id.as_deref());
+            if let Some(option) = selected_option {
+                if model.selected_element_ids.is_empty() {
+                    ui.label(RichText::new("Select one or more target instances on the Stage to activate this option.").weak());
+                }
+                if ui.add_enabled(!model.selected_element_ids.is_empty(), egui::Button::new("Activate on Stage selection")).clicked() {
+                    actions.push(StudioUiAction::RequestActivateSwitchOption { symbol_id: option.id.clone() });
+                }
+            } else {
+                ui.label(RichText::new("Select an option before activating it.").weak());
             }
         }
         ui.separator();
@@ -997,6 +1065,30 @@ mod tests {
         assert!(state.active_view_id.is_none());
         assert!(state.selected_issue_id.is_none());
         assert!(state.asset_filter.is_empty());
+    }
+
+    #[test]
+    fn controller_feedback_distinguishes_binding_from_preview_capability() {
+        let mut bone = SmartBoneEntry {
+            id: "bone-1".into(), name: "Elbow".into(), parent_element_id: "upper".into(),
+            child_element_id: "lower".into(), angle_degrees: 0.0, limits_degrees: None,
+            controller_id: None,
+        };
+        assert_eq!(smart_bone_controller_status(&bone, false).0, "No controller bound");
+        bone.controller_id = Some("controller-1".into());
+        assert_eq!(smart_bone_controller_status(&bone, false).0, "Controller bound · preview unavailable");
+        assert_eq!(smart_bone_controller_status(&bone, true).0, "Controller bound · preview available");
+    }
+
+    #[test]
+    fn switch_option_preview_only_resolves_options_in_the_selected_group() {
+        let group = SwitchGroupEntry {
+            id: "eyes".into(), name: "Eyes".into(),
+            options: vec![SwitchOptionEntry { id: "open".into(), name: "Open".into() }],
+        };
+        assert_eq!(switch_option_preview(&group, Some("open")).map(|v| v.name.as_str()), Some("Open"));
+        assert!(switch_option_preview(&group, Some("missing")).is_none());
+        assert!(switch_option_preview(&group, None).is_none());
     }
 
     #[test]
