@@ -671,3 +671,104 @@ mod tests {
         assert_ne!(controller, target);
     }
 }
+
+
+/// Compose the primary 360 Studio workspace inside a host-owned dock region.
+///
+/// The host supplies the real AniCraft Stage through `show_stage`. The callback
+/// receives the Stage region's `egui::Ui`; Studio never creates a renderer,
+/// viewport, timeline, top-level window, or docking manager. Asset Library and
+/// Diagnostics remain available as independent dockable panels through
+/// `show_asset_library` and `show_diagnostics`.
+///
+/// The layout inherits the active host style and switches to a vertical,
+/// scrollable arrangement when the dock is narrow. The host should retain
+/// `StudioUiState` for the lifetime of this workspace and dispatch the
+/// accumulated semantic actions through its command/undo boundary.
+pub fn show_workspace(
+    ui: &mut Ui,
+    model: &StudioUiModel,
+    state: &mut StudioUiState,
+    actions: &mut Vec<StudioUiAction>,
+    show_stage: impl FnOnce(&mut Ui),
+) {
+    show_workspace_header(ui, model);
+    ui.separator();
+
+    let available = ui.available_size_before_wrap();
+    let compact = available.x < 760.0;
+
+    if compact {
+        egui::ScrollArea::vertical()
+            .id_salt("anicraft_360_workspace_compact")
+            .auto_shrink([false, false])
+            .show(ui, |ui| {
+                egui::Frame::group(ui.style()).show(ui, |ui| {
+                    show_character_hierarchy(ui, model, state, actions);
+                });
+                ui.add_space(6.0);
+                ui.heading("Stage");
+                egui::Frame::group(ui.style()).show(ui, |ui| {
+                    ui.set_min_height(260.0);
+                    show_stage(ui);
+                });
+                ui.add_space(6.0);
+                egui::Frame::group(ui.style()).show(ui, |ui| {
+                    show_properties(ui, model, state, actions);
+                });
+                ui.add_space(6.0);
+                show_turn_ruler(ui, model, state, actions);
+                show_view_rail(ui, model, state, actions);
+            });
+        return;
+    }
+
+    let left_width = (available.x * 0.23).clamp(190.0, 260.0);
+    let right_width = (available.x * 0.25).clamp(220.0, 300.0);
+    let center_width = (available.x - left_width - right_width - 16.0).max(180.0);
+    let content_height = (available.y - 8.0).max(220.0);
+    let stage_height = (content_height - 116.0).max(120.0);
+
+    ui.horizontal(|ui| {
+        ui.allocate_ui_with_layout(
+            egui::vec2(left_width, content_height),
+            Layout::top_down(Align::Min),
+            |ui| {
+                egui::Frame::group(ui.style()).show(ui, |ui| {
+                    ui.set_min_size(egui::vec2(left_width - 8.0, content_height - 8.0));
+                    show_character_hierarchy(ui, model, state, actions);
+                });
+            },
+        );
+
+        ui.separator();
+
+        ui.allocate_ui_with_layout(
+            egui::vec2(center_width, content_height),
+            Layout::top_down(Align::Min),
+            |ui| {
+                ui.heading("Stage");
+                egui::Frame::group(ui.style()).show(ui, |ui| {
+                    ui.set_min_size(egui::vec2(center_width - 8.0, stage_height));
+                    show_stage(ui);
+                });
+                ui.add_space(6.0);
+                show_turn_ruler(ui, model, state, actions);
+                show_view_rail(ui, model, state, actions);
+            },
+        );
+
+        ui.separator();
+
+        ui.allocate_ui_with_layout(
+            egui::vec2(right_width, content_height),
+            Layout::top_down(Align::Min),
+            |ui| {
+                egui::Frame::group(ui.style()).show(ui, |ui| {
+                    ui.set_min_size(egui::vec2(right_width - 8.0, content_height - 8.0));
+                    show_properties(ui, model, state, actions);
+                });
+            },
+        );
+    });
+}
