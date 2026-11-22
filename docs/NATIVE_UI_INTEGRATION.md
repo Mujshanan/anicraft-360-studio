@@ -17,6 +17,7 @@ Allow AniCraft 360 Studio to render as a native dockable workspace component whi
 The Rust crate exposes:
 - `StudioHost::snapshot() -> StudioSnapshot`
 - `StudioHost::dispatch(StudioCommand) -> Result<(), String>`
+- `StudioUi::show(&mut egui::Ui, &mut impl StudioHost)` for nested/dockable mounting
 - `StudioHost::show_stage(&mut egui::Ui)`
 - `STUDIO_HOST_API_MAJOR`
 
