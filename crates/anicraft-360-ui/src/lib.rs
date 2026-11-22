@@ -292,9 +292,19 @@ pub enum IntegrationStatus {
     Error(String),
 }
 
+/// Contextual editor displayed in the Studio workspace inspector.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum WorkspacePanel {
+    #[default]
+    Properties,
+    SmartBone,
+    SwitchGroups,
+}
+
 /// Transient workspace state only. These fields are never document data.
 #[derive(Clone, Debug, Default)]
 pub struct StudioUiState {
+    pub active_workspace_panel: WorkspacePanel,
     pub selected_node_id: Option<String>,
     pub collapsed_node_ids: BTreeSet<String>,
     pub active_view_id: Option<String>,
@@ -613,7 +623,10 @@ pub fn show_smart_bone_editor(
         ui.label("Name");
         ui.text_edit_singleline(&mut state.smart_bone_name);
     });
-    let can_create = model.capabilities.create_smart_bone && model.selected_element_ids.len() >= 2;
+    let can_create = model.capabilities.create_smart_bone
+        && model.selected_element_ids.len() >= 2
+        && model.selected_element_ids[0] != model.selected_element_ids[1]
+        && !state.smart_bone_name.trim().is_empty();
     if ui.add_enabled(can_create, egui::Button::new("＋ Create from selected elements")).clicked()
         && let (Some(parent), Some(child)) = (model.selected_element_ids.first(), model.selected_element_ids.get(1))
     {
@@ -625,6 +638,10 @@ pub fn show_smart_bone_editor(
     }
     if model.selected_element_ids.len() < 2 {
         ui.label(RichText::new("Select the parent artwork, then the child artwork on the Stage.").weak());
+    } else if model.selected_element_ids[0] == model.selected_element_ids[1] {
+        ui.colored_label(ui.visuals().warn_fg_color, "Choose two different Stage elements.");
+    } else if state.smart_bone_name.trim().is_empty() {
+        ui.colored_label(ui.visuals().warn_fg_color, "Enter a name before creating the Smart Bone.");
     }
     ui.separator();
     if model.smart_bones.is_empty() {
@@ -651,12 +668,18 @@ pub fn show_smart_bone_editor(
                     ui.add(egui::DragValue::new(&mut state.smart_bone_min_degrees).speed(1.0).suffix("°"));
                     ui.label("to");
                     ui.add(egui::DragValue::new(&mut state.smart_bone_max_degrees).speed(1.0).suffix("°"));
-                    if ui.button("Apply").clicked() {
+                    let limits_valid = state.smart_bone_min_degrees.is_finite()
+                        && state.smart_bone_max_degrees.is_finite()
+                        && state.smart_bone_min_degrees < state.smart_bone_max_degrees;
+                    if ui.add_enabled(limits_valid, egui::Button::new("Apply")).clicked() {
                         actions.push(StudioUiAction::RequestSetSmartBoneLimits {
                             bone_id: bone.id.clone(),
                             min_degrees: state.smart_bone_min_degrees,
                             max_degrees: state.smart_bone_max_degrees,
                         });
+                    }
+                    if !limits_valid {
+                        ui.colored_label(ui.visuals().warn_fg_color, "Limits must be finite; minimum must be below maximum.");
                     }
                 });
                 ui.label(RichText::new(format!("Parent {} → child {}", bone.parent_element_id, bone.child_element_id)).weak());
@@ -716,7 +739,8 @@ pub fn show_switch_group_editor(
                         }
                     });
                 state.selected_switch_source_symbol_id = (!chosen.is_empty()).then_some(chosen);
-                if ui.button("Duplicate selected symbol into group").clicked()
+                if ui.add_enabled(state.selected_switch_source_symbol_id.is_some(),
+                    egui::Button::new("Duplicate selected symbol into group")).clicked()
                     && let Some(symbol_id) = state.selected_switch_source_symbol_id.clone()
                 {
                     actions.push(StudioUiAction::RequestAddSwitchOption { group_id: group.id.clone(), symbol_id });
@@ -831,6 +855,26 @@ fn empty_state(ui: &mut Ui, title: &str, description: &str) {
     });
 }
 
+/// Contextual editor selector inside the host-owned Studio inspector.
+fn show_workspace_inspector(
+    ui: &mut Ui,
+    model: &StudioUiModel,
+    state: &mut StudioUiState,
+    actions: &mut Vec<StudioUiAction>,
+) {
+    ui.horizontal_wrapped(|ui| {
+        ui.selectable_value(&mut state.active_workspace_panel, WorkspacePanel::Properties, "Properties");
+        ui.selectable_value(&mut state.active_workspace_panel, WorkspacePanel::SmartBone, "Smart Bone");
+        ui.selectable_value(&mut state.active_workspace_panel, WorkspacePanel::SwitchGroups, "Switch Groups");
+    });
+    ui.separator();
+    match state.active_workspace_panel {
+        WorkspacePanel::Properties => show_properties(ui, model, state, actions),
+        WorkspacePanel::SmartBone => show_smart_bone_editor(ui, model, state, actions),
+        WorkspacePanel::SwitchGroups => show_switch_group_editor(ui, model, state, actions),
+    }
+}
+
 /// Compose the primary 360 Studio workspace inside a host-owned dock region.
 ///
 /// The host supplies the real AniCraft Stage through `show_stage`. The callback
@@ -872,7 +916,7 @@ pub fn show_workspace(
                 });
                 ui.add_space(6.0);
                 egui::Frame::group(ui.style()).show(ui, |ui| {
-                    show_properties(ui, model, state, actions);
+                    show_workspace_inspector(ui, model, state, actions);
                 });
                 ui.add_space(6.0);
                 show_turn_ruler(ui, model, state, actions);
@@ -924,7 +968,7 @@ pub fn show_workspace(
             |ui| {
                 egui::Frame::group(ui.style()).show(ui, |ui| {
                     ui.set_min_size(egui::vec2(right_width - 8.0, content_height - 8.0));
-                    show_properties(ui, model, state, actions);
+                    show_workspace_inspector(ui, model, state, actions);
                 });
             },
         );
@@ -938,6 +982,7 @@ mod tests {
     #[test]
     fn default_state_is_transient_and_empty() {
         let state = StudioUiState::default();
+        assert_eq!(state.active_workspace_panel, WorkspacePanel::Properties);
         assert!(state.selected_node_id.is_none());
         assert!(state.collapsed_node_ids.is_empty());
         assert!(state.active_view_id.is_none());
