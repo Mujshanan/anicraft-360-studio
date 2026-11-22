@@ -609,6 +609,17 @@ pub fn show_properties(
 }
 
 
+fn can_create_smart_bone(model: &StudioUiModel, state: &StudioUiState) -> bool {
+    model.capabilities.create_smart_bone
+        && model.selected_element_ids.len() >= 2
+        && model.selected_element_ids[0] != model.selected_element_ids[1]
+        && !state.smart_bone_name.trim().is_empty()
+}
+
+fn smart_bone_limits_valid(min_degrees: f32, max_degrees: f32) -> bool {
+    min_degrees.is_finite() && max_degrees.is_finite() && min_degrees < max_degrees
+}
+
 /// Smart Bone authoring over AniCraft's native armature commands. Controller
 /// references are identifiers only; Forma Deform owns their evaluation.
 pub fn show_smart_bone_editor(
@@ -623,10 +634,7 @@ pub fn show_smart_bone_editor(
         ui.label("Name");
         ui.text_edit_singleline(&mut state.smart_bone_name);
     });
-    let can_create = model.capabilities.create_smart_bone
-        && model.selected_element_ids.len() >= 2
-        && model.selected_element_ids[0] != model.selected_element_ids[1]
-        && !state.smart_bone_name.trim().is_empty();
+    let can_create = can_create_smart_bone(model, state);
     if ui.add_enabled(can_create, egui::Button::new("＋ Create from selected elements")).clicked()
         && let (Some(parent), Some(child)) = (model.selected_element_ids.first(), model.selected_element_ids.get(1))
     {
@@ -668,9 +676,10 @@ pub fn show_smart_bone_editor(
                     ui.add(egui::DragValue::new(&mut state.smart_bone_min_degrees).speed(1.0).suffix("°"));
                     ui.label("to");
                     ui.add(egui::DragValue::new(&mut state.smart_bone_max_degrees).speed(1.0).suffix("°"));
-                    let limits_valid = state.smart_bone_min_degrees.is_finite()
-                        && state.smart_bone_max_degrees.is_finite()
-                        && state.smart_bone_min_degrees < state.smart_bone_max_degrees;
+                    let limits_valid = smart_bone_limits_valid(
+                        state.smart_bone_min_degrees,
+                        state.smart_bone_max_degrees,
+                    );
                     if ui.add_enabled(limits_valid, egui::Button::new("Apply")).clicked() {
                         actions.push(StudioUiAction::RequestSetSmartBoneLimits {
                             bone_id: bone.id.clone(),
@@ -988,6 +997,33 @@ mod tests {
         assert!(state.active_view_id.is_none());
         assert!(state.selected_issue_id.is_none());
         assert!(state.asset_filter.is_empty());
+    }
+
+    #[test]
+    fn smart_bone_limits_reject_non_finite_and_reversed_ranges() {
+        assert!(smart_bone_limits_valid(-90.0, 90.0));
+        assert!(!smart_bone_limits_valid(10.0, 10.0));
+        assert!(!smart_bone_limits_valid(90.0, -90.0));
+        assert!(!smart_bone_limits_valid(f32::NAN, 90.0));
+        assert!(!smart_bone_limits_valid(-90.0, f32::INFINITY));
+    }
+
+    #[test]
+    fn smart_bone_creation_requires_capability_distinct_selection_and_name() {
+        let mut model = StudioUiModel::default();
+        let mut state = StudioUiState::default();
+        model.capabilities.create_smart_bone = true;
+        model.selected_element_ids = vec!["parent".into(), "child".into()];
+        state.smart_bone_name = "Elbow".into();
+        assert!(can_create_smart_bone(&model, &state));
+        model.selected_element_ids[1] = "parent".into();
+        assert!(!can_create_smart_bone(&model, &state));
+        model.selected_element_ids[1] = "child".into();
+        state.smart_bone_name = "  ".into();
+        assert!(!can_create_smart_bone(&model, &state));
+        state.smart_bone_name = "Elbow".into();
+        model.capabilities.create_smart_bone = false;
+        assert!(!can_create_smart_bone(&model, &state));
     }
 
     #[test]
