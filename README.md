@@ -15,6 +15,12 @@ It organizes how a character is assembled, controlled, and represented across vi
 - View correspondence, landmarks, silhouette/proportion checks, and turn-sheet workflows.
 - View-specific corrective setup, using Forma Deform for deformation behavior.
 
+## Asset and project formats
+
+AniCraft 360 Studio follows an open-format-first approach: SVG, PSD, BLEND (optional 3D source/reference), and PNG are the planned artwork formats; versioned JSON stores Studio-specific metadata. Managed project copies are the default, with linked external assets available by explicit choice. The optional `.anicraft360` ZIP-based package is for portable project exchange, not a proprietary artwork format or replacement for AniCraft's native document format.
+
+Format support is planned and must be verified by implementation; this repository does not claim that the listed importers/exporters already exist. See [ASSET_AND_PACKAGE_FORMATS.md](docs/ASSET_AND_PACKAGE_FORMATS.md) for the complete accepted decision and import/export contract.
+
 ## Relationship to Forma Deform
 
 The two plugins have distinct responsibilities:
