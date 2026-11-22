@@ -172,7 +172,7 @@ These are research references, not dependencies or approved code imports.
 - Deterministic preview tests; no live-playback claim before a verified host evaluator exists.
 
 
-## 10. Current UI implementation status
+## 9. Current UI implementation status
 
 The Studio repository contains the host-independent native panel crate at `crates/anicraft-360-ui`. It targets egui 0.36, matching the audited AniCraft host dependency, and inherits the active egui style/visuals instead of defining a competing theme or docking system.
 
@@ -191,7 +191,7 @@ The UI crate consumes immutable host/domain projections, stores only transient U
 
 This implementation status does not imply that the host adapter, character schemas, persistent authoring commands, live stage overlays, or playback integration exist.
 
-## 9. Non-goals and change control
+## 10. Non-goals and change control
 
 - No separate animation timeline, renderer, undo system, document format, VFS, or general-purpose bone engine.
 - No independent Smart Controller implementation.
