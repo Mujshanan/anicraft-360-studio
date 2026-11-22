@@ -72,10 +72,10 @@ fn timeline(ui: &mut egui::Ui,s: &mut Session){
         if ui.button("+ Keyframe").clicked(){let _=s.execute("timeline.insert_keyframe",&json!({"advance":true}));}
         ui.label(format!("Frame {} / {}",s.frame+1,s.frame_count()));
     });
-    let tl=s.doc.timeline(s.scene);egui::ScrollArea::both().max_height(118.0).show(ui,|ui|{
+    let layers=s.doc.timeline(s.scene).layers.clone();egui::ScrollArea::both().max_height(118.0).show(ui,|ui|{
         egui::Grid::new("anicraft_360_live_timeline").striped(true).show(ui,|ui|{
             ui.label("Layer");let first=s.frame.saturating_sub(4);for f in first..first.saturating_add(16){ui.label(RichText::new(format!("{}",f+1)).size(9.0));}ui.end_row();
-            for layer in &tl.layers{
+            for layer in &layers{
                 ui.label(if layer.id==s.layer{RichText::new(&layer.name).strong()}else{RichText::new(&layer.name)});
                 for f in first..first.saturating_add(16){
                     let key=layer.keyframes.iter().find(|k|k.start<=f&&f<k.start.saturating_add(k.duration));
