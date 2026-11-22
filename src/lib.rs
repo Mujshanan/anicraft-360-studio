@@ -7,7 +7,7 @@
 
 #![forbid(unsafe_code)]
 
-use egui::{Align, Color32, Context, Layout, RichText, ScrollArea, SidePanel, TopBottomPanel, Ui};
+use egui::{Align, Color32, Layout, RichText, ScrollArea, Ui};
 
 /// Version of the host-facing snapshot/command contract implemented by this crate.
 pub const STUDIO_HOST_API_MAJOR: u16 = 1;
@@ -137,191 +137,217 @@ impl StudioUi {
     }
 
     /// Draw the Studio workspace using AniCraft's egui context and a host adapter.
-    pub fn show(&mut self, ctx: &Context, host: &mut impl StudioHost) {
+    /// Draw the workspace inside the host-provided egui region. This is intentionally a
+    /// nested-Ui API so it can be mounted inside AniCraft's dock system without creating
+    /// competing application-level SidePanels or TopBottomPanels.
+    pub fn show(&mut self, ui: &mut Ui, host: &mut impl StudioHost) {
         let snapshot = host.snapshot();
         let mut pending = None;
+        let full_width = ui.available_width().max(520.0);
+        let total_height = ui.available_height().max(260.0);
+        let left_width = 224.0;
+        let right_width = 276.0;
+        let body_height = (total_height - 34.0 - 78.0 - 12.0).max(120.0);
+        let center_width = (full_width - left_width - right_width - 16.0).max(180.0);
 
-        TopBottomPanel::top("anicraft_360_top_bar")
-            .exact_height(34.0)
-            .show(ctx, |ui| {
-                ui.horizontal_centered(|ui| {
-                    ui.label(RichText::new("360°").strong().color(Color32::from_rgb(115, 170, 225)));
-                    ui.separator();
-                    ui.label(RichText::new(if snapshot.character_name.is_empty() { "Character Studio" } else { &snapshot.character_name }).strong());
-                    ui.separator();
-                    ui.menu_button("Character", |ui| {
-                        if ui.add_enabled(snapshot.capabilities.create_view_set, egui::Button::new("New View Set")).clicked() {
-                            pending = Some(StudioCommand::CreateViewSet);
-                            ui.close();
+        ui.vertical(|ui| {
+            ui.allocate_ui_with_layout(
+                egui::vec2(full_width, 34.0),
+                Layout::left_to_right(Align::Center),
+                |ui| {
+                    ui.horizontal_centered(|ui| {
+                        ui.label(RichText::new("360°").strong().color(Color32::from_rgb(115, 170, 225)));
+                        ui.separator();
+                        ui.label(RichText::new(if snapshot.character_name.is_empty() { "Character Studio" } else { &snapshot.character_name }).strong());
+                        if !snapshot.document_name.is_empty() {
+                            ui.label(RichText::new(format!("— {}", snapshot.document_name)).small().weak());
                         }
-                        if ui.add_enabled(snapshot.capabilities.open_asset_library, egui::Button::new("Open Asset Library")).clicked() {
-                            pending = Some(StudioCommand::OpenAssetLibrary);
-                            ui.close();
-                        }
-                    });
-                    ui.menu_button("Views", |ui| {
-                        if ui.add_enabled(snapshot.capabilities.register_view, egui::Button::new("Register View…")).clicked() {
-                            pending = Some(StudioCommand::RegisterView);
-                            ui.close();
-                        }
-                    });
-                    ui.menu_button("Rigging", |ui| {
-                        if ui.add_enabled(snapshot.capabilities.create_smart_bone, egui::Button::new("New Smart Bone")).clicked() {
-                            pending = Some(StudioCommand::CreateSmartBone);
-                            ui.close();
-                        }
-                        if ui.add_enabled(snapshot.capabilities.create_switch_group, egui::Button::new("New Switch Group")).clicked() {
-                            pending = Some(StudioCommand::CreateSwitchGroup);
-                            ui.close();
-                        }
-                    });
-                    ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                        let label = if self.show_diagnostics { "Hide Diagnostics" } else { "Diagnostics" };
-                        if ui.small_button(label).clicked() {
-                            self.show_diagnostics = !self.show_diagnostics;
-                        }
-                        ui.label(RichText::new("AniCraft workspace").small().weak());
-                    });
-                });
-            });
-
-        TopBottomPanel::bottom("anicraft_360_view_rail")
-            .resizable(false)
-            .show(ctx, |ui| {
-                ui.add_space(3.0);
-                ui.horizontal(|ui| {
-                    ui.label(RichText::new("TURN").small().strong().weak());
-                    let mut angle = snapshot.inspection_angle_degrees;
-                    let slider = egui::Slider::new(&mut angle, -180.0..=180.0).suffix("°").show_value(true);
-                    if ui.add_sized([260.0, 20.0], slider).changed() {
-                        pending = Some(StudioCommand::SetInspectionAngle { degrees: angle });
-                    }
-                    ui.separator();
-                    if ui.small_button("‹").on_hover_text("Previous registered view").clicked() {
-                        if let Some(view) = adjacent_view(&snapshot, false) {
-                            pending = Some(StudioCommand::SelectView { id: view.id.clone() });
-                        }
-                    }
-                    if ui.small_button("›").on_hover_text("Next registered view").clicked() {
-                        if let Some(view) = adjacent_view(&snapshot, true) {
-                            pending = Some(StudioCommand::SelectView { id: view.id.clone() });
-                        }
-                    }
-                    ui.label(RichText::new(format!("{} views", snapshot.views.len())).small().weak());
-                });
-                ui.add_space(3.0);
-                ScrollArea::horizontal().id_salt("anicraft_360_view_items").show(ui, |ui| {
-                    ui.horizontal(|ui| {
-                        if snapshot.views.is_empty() {
-                            ui.label(RichText::new("No views registered").weak());
-                            if ui.add_enabled(snapshot.capabilities.create_view_set, egui::Button::new("Create View Set")).clicked() {
+                        ui.separator();
+                        ui.menu_button("Character", |ui| {
+                            if ui.add_enabled(snapshot.capabilities.create_view_set, egui::Button::new("New View Set")).clicked() {
                                 pending = Some(StudioCommand::CreateViewSet);
+                                ui.close();
                             }
+                            if ui.add_enabled(snapshot.capabilities.open_asset_library, egui::Button::new("Open Asset Library")).clicked() {
+                                pending = Some(StudioCommand::OpenAssetLibrary);
+                                ui.close();
+                            }
+                        });
+                        ui.menu_button("Views", |ui| {
+                            if ui.add_enabled(snapshot.capabilities.register_view, egui::Button::new("Register View…")).clicked() {
+                                pending = Some(StudioCommand::RegisterView);
+                                ui.close();
+                            }
+                        });
+                        ui.menu_button("Rigging", |ui| {
+                            if ui.add_enabled(snapshot.capabilities.create_smart_bone, egui::Button::new("New Smart Bone")).clicked() {
+                                pending = Some(StudioCommand::CreateSmartBone);
+                                ui.close();
+                            }
+                            if ui.add_enabled(snapshot.capabilities.create_switch_group, egui::Button::new("New Switch Group")).clicked() {
+                                pending = Some(StudioCommand::CreateSwitchGroup);
+                                ui.close();
+                            }
+                        });
+                        ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                            let label = if self.show_diagnostics { "Hide Diagnostics" } else { "Diagnostics" };
+                            if ui.small_button(label).clicked() {
+                                self.show_diagnostics = !self.show_diagnostics;
+                            }
+                            ui.label(RichText::new("AniCraft").small().weak());
+                        });
+                    });
+                },
+            );
+
+            ui.separator();
+
+            ui.allocate_ui_with_layout(
+                egui::vec2(full_width, body_height),
+                Layout::left_to_right(Align::Min),
+                |ui| {
+                    ui.allocate_ui_with_layout(
+                        egui::vec2(left_width, body_height),
+                        Layout::top_down(Align::Min),
+                        |ui| {
+                            panel_heading(ui, "Character");
+                            ui.add_space(4.0);
+                            ui.add(egui::TextEdit::singleline(&mut self.hierarchy_filter).hint_text("Filter hierarchy…").desired_width(f32::INFINITY));
+                            ui.add_space(4.0);
+                            ScrollArea::vertical().id_salt("anicraft_360_hierarchy_scroll").show(ui, |ui| {
+                                if snapshot.hierarchy.is_empty() {
+                                    empty_panel(ui, "No character structure", "Select a document or create a character to begin.");
+                                }
+                                for item in snapshot.hierarchy.iter().filter(|item| self.hierarchy_filter.is_empty() || item.label.to_lowercase().contains(&self.hierarchy_filter.to_lowercase())) {
+                                    ui.horizontal(|ui| {
+                                        ui.add_space(item.depth as f32 * 12.0);
+                                        ui.label(RichText::new(kind_glyph(&item.kind)).weak());
+                                        if ui.selectable_label(item.selected, &item.label).clicked() {
+                                            pending = Some(StudioCommand::SelectHierarchyItem { id: item.id.clone() });
+                                        }
+                                    });
+                                }
+                            });
+                        },
+                    );
+
+                    ui.separator();
+
+                    ui.allocate_ui_with_layout(
+                        egui::vec2(center_width, body_height),
+                        Layout::top_down(Align::Min),
+                        |ui| {
+                            ui.horizontal(|ui| {
+                                ui.label(RichText::new("STAGE").small().strong().weak());
+                                ui.separator();
+                                if let Some(view) = snapshot.views.iter().find(|v| Some(v.id.as_str()) == snapshot.active_view_id.as_deref()) {
+                                    ui.label(RichText::new(format!("{}  ·  {}°", view.name, format_angle(view.angle_degrees))).strong());
+                                    ui.label(RichText::new(view_status_label(view.status)).small().weak());
+                                } else {
+                                    ui.label(RichText::new("No active authored view").weak());
+                                }
+                                ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                                    if !snapshot.capabilities.stage_renderer {
+                                        ui.label(RichText::new("Stage renderer unavailable").small().weak());
+                                    }
+                                    ui.label(RichText::new("Select  ·  Pan  ·  Zoom").small().weak());
+                                });
+                            });
+                            ui.separator();
+                            host.show_stage(ui);
+                        },
+                    );
+
+                    ui.separator();
+
+                    ui.allocate_ui_with_layout(
+                        egui::vec2(right_width, body_height),
+                        Layout::top_down(Align::Min),
+                        |ui| {
+                            panel_heading(ui, "Properties");
+                            ui.add_space(6.0);
+                            if let Some(selection) = &snapshot.selection {
+                                ui.label(RichText::new(&selection.title).strong());
+                                ui.label(RichText::new(&selection.kind).small().weak());
+                                if !selection.description.is_empty() {
+                                    ui.add_space(4.0);
+                                    ui.label(RichText::new(&selection.description).small());
+                                }
+                                ui.separator();
+                                for (name, value) in &selection.properties {
+                                    ui.horizontal(|ui| {
+                                        ui.label(RichText::new(name).small().weak());
+                                        ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                                            ui.label(RichText::new(value).small());
+                                        });
+                                    });
+                                }
+                            } else {
+                                empty_panel(ui, "Nothing selected", "Select a character part, view, Smart Bone, or Switch Group to inspect its properties.");
+                            }
+                            if self.show_diagnostics {
+                                ui.separator();
+                                ui.label(RichText::new("Diagnostics").strong());
+                                if let Some(message) = &snapshot.status_message {
+                                    ui.label(message);
+                                } else {
+                                    ui.label(RichText::new("No host diagnostics reported").small().weak());
+                                }
+                                if let Some(error) = &self.last_error {
+                                    ui.colored_label(Color32::from_rgb(220, 100, 90), error);
+                                }
+                            }
+                        },
+                    );
+                },
+            );
+
+            ui.separator();
+
+            ui.allocate_ui_with_layout(
+                egui::vec2(full_width, 78.0),
+                Layout::top_down(Align::Min),
+                |ui| {
+                    ui.horizontal(|ui| {
+                        ui.label(RichText::new("TURN").small().strong().weak());
+                        let mut angle = snapshot.inspection_angle_degrees;
+                        let slider = egui::Slider::new(&mut angle, -180.0..=180.0).suffix("°").show_value(true);
+                        if ui.add_sized([260.0, 20.0], slider).changed() {
+                            pending = Some(StudioCommand::SetInspectionAngle { degrees: angle });
                         }
-                        for view in &snapshot.views {
-                            let active = snapshot.active_view_id.as_deref() == Some(view.id.as_str());
-                            let status = view_status_label(view.status);
-                            let title = format!("{}  {}°  ·  {}", view.name, format_angle(view.angle_degrees), status);
-                            if ui.selectable_label(active, title).clicked() {
+                        ui.separator();
+                        if ui.small_button("‹").on_hover_text("Previous registered view").clicked() {
+                            if let Some(view) = adjacent_view(&snapshot, false) {
                                 pending = Some(StudioCommand::SelectView { id: view.id.clone() });
                             }
                         }
+                        if ui.small_button("›").on_hover_text("Next registered view").clicked() {
+                            if let Some(view) = adjacent_view(&snapshot, true) {
+                                pending = Some(StudioCommand::SelectView { id: view.id.clone() });
+                            }
+                        }
+                        ui.label(RichText::new(format!("{} views", snapshot.views.len())).small().weak());
                     });
-                });
-                ui.add_space(3.0);
-            });
-
-        SidePanel::left("anicraft_360_hierarchy")
-            .default_width(224.0)
-            .min_width(180.0)
-            .resizable(true)
-            .show(ctx, |ui| {
-                panel_heading(ui, "Character");
-                ui.add_space(4.0);
-                ui.add(egui::TextEdit::singleline(&mut self.hierarchy_filter).hint_text("Filter hierarchy…").desired_width(f32::INFINITY));
-                ui.add_space(4.0);
-                ScrollArea::vertical().id_salt("anicraft_360_hierarchy_scroll").show(ui, |ui| {
-                    if snapshot.hierarchy.is_empty() {
-                        empty_panel(ui, "No character structure", "Select a document or create a character to begin.");
-                    }
-                    for item in snapshot.hierarchy.iter().filter(|item| self.hierarchy_filter.is_empty() || item.label.to_lowercase().contains(&self.hierarchy_filter.to_lowercase())) {
+                    ScrollArea::horizontal().id_salt("anicraft_360_view_items").show(ui, |ui| {
                         ui.horizontal(|ui| {
-                            ui.add_space(item.depth as f32 * 12.0);
-                            ui.label(RichText::new(kind_glyph(&item.kind)).weak());
-                            if ui.selectable_label(item.selected, &item.label).clicked() {
-                                pending = Some(StudioCommand::SelectHierarchyItem { id: item.id.clone() });
+                            if snapshot.views.is_empty() {
+                                ui.label(RichText::new("No views registered").weak());
+                                if ui.add_enabled(snapshot.capabilities.create_view_set, egui::Button::new("Create View Set")).clicked() {
+                                    pending = Some(StudioCommand::CreateViewSet);
+                                }
+                            }
+                            for view in &snapshot.views {
+                                let active = snapshot.active_view_id.as_deref() == Some(view.id.as_str());
+                                let title = format!("{}  {}°  ·  {}", view.name, format_angle(view.angle_degrees), view_status_label(view.status));
+                                if ui.selectable_label(active, title).clicked() {
+                                    pending = Some(StudioCommand::SelectView { id: view.id.clone() });
+                                }
                             }
                         });
-                    }
-                });
-            });
-
-        SidePanel::right("anicraft_360_inspector")
-            .default_width(276.0)
-            .min_width(220.0)
-            .resizable(true)
-            .show(ctx, |ui| {
-                panel_heading(ui, "Properties");
-                ui.add_space(6.0);
-                if let Some(selection) = &snapshot.selection {
-                    ui.label(RichText::new(&selection.title).strong());
-                    ui.label(RichText::new(&selection.kind).small().weak());
-                    if !selection.description.is_empty() {
-                        ui.add_space(4.0);
-                        ui.label(RichText::new(&selection.description).small());
-                    }
-                    ui.separator();
-                    for (name, value) in &selection.properties {
-                        ui.horizontal(|ui| {
-                            ui.label(RichText::new(name).small().weak());
-                            ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                                ui.label(RichText::new(value).small());
-                            });
-                        });
-                    }
-                } else {
-                    empty_panel(ui, "Nothing selected", "Select a character part, view, Smart Bone, or Switch Group to inspect its properties.");
-                }
-            });
-
-        egui::CentralPanel::default().show(ctx, |ui| {
-            ui.horizontal(|ui| {
-                ui.label(RichText::new("STAGE").small().strong().weak());
-                ui.separator();
-                if let Some(view) = snapshot.views.iter().find(|v| Some(v.id.as_str()) == snapshot.active_view_id.as_deref()) {
-                    ui.label(RichText::new(format!("{}  ·  {}°", view.name, format_angle(view.angle_degrees))).strong());
-                    ui.label(RichText::new(view_status_label(view.status)).small().weak());
-                } else {
-                    ui.label(RichText::new("No active authored view").weak());
-                }
-                ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                    if ui.small_button("Fit").on_hover_text("Fit artwork in the AniCraft Stage").clicked() {
-                        // View fitting is a host viewport command; added to the contract when
-                        // AniCraft exposes a stable viewport command for embedded tools.
-                    }
-                    ui.label(RichText::new("Select  ·  Pan  ·  Zoom").small().weak());
-                });
-            });
-            ui.separator();
-            host.show_stage(ui);
+                    });
+                },
+            );
         });
-
-        if self.show_diagnostics {
-            egui::Window::new("360 Studio Diagnostics")
-                .id(egui::Id::new("anicraft_360_diagnostics"))
-                .default_width(360.0)
-                .default_height(180.0)
-                .show(ctx, |ui| {
-                    if let Some(message) = &snapshot.status_message {
-                        ui.label(message);
-                    } else {
-                        empty_panel(ui, "No diagnostics reported", "Only host-provided diagnostics are shown here.");
-                    }
-                    if let Some(error) = &self.last_error {
-                        ui.colored_label(Color32::from_rgb(220, 100, 90), error);
-                    }
-                });
-        }
 
         if let Some(command) = pending {
             self.last_error = host.dispatch(command).err();
