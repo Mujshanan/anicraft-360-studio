@@ -7,7 +7,7 @@
 use egui::{Align, Layout, RichText, Ui};
 use std::collections::BTreeMap;
 
-use crate::{CharacterView, ViewStatus};
+use crate::CharacterView;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum MultiViewKind {
