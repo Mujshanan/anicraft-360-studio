@@ -1,0 +1,10 @@
+[package]
+name = "anicraft-360-ui"
+version = "0.1.0"
+description = "Host-embedded egui panels for AniCraft 360 Studio"
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+egui.workspace = true
