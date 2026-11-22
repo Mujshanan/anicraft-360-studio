@@ -714,7 +714,7 @@ pub fn show_switch_group_editor(
                         }
                     });
                 state.selected_switch_option_id = Some(chosen);
-                if ui.button("Add selected symbol as option").clicked()
+                if ui.button("Duplicate selected symbol into group").clicked()
                     && let Some(symbol_id) = state.selected_switch_option_id.clone()
                 {
                     actions.push(StudioUiAction::RequestAddSwitchOption { group_id: group.id.clone(), symbol_id });
