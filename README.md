@@ -26,6 +26,10 @@ AniCraft remains responsible for the actual Stage renderer, timeline, document m
 - Multi-view character sets, turn-angle organization, landmarks, correspondence, and turn validation.
 - View-specific corrective setup, using Forma Deform for deformation behavior.
 
+## Native host integration
+
+The companion AniCraft fork integration mounts the Character, Smart Bone, and Switch Group panels in AniCraft's existing dock system. It reads the active document, Stage selection, armatures and Library, and dispatches edits through native commands (`bone.add`, `bone.set_limits`, `library.new_folder`, `library.move`, `element.swap_symbol`). AniCraft's central Stage and timeline remain authoritative; Studio creates no duplicate renderer or timeline. Smart Controller binding/evaluation is still a separate Forma Deform integration step.
+
 ## Relationship to Forma Deform
 
 - **360 Studio** owns character semantics, Smart Bone authoring, Switch Groups, asset organization, views, turn angles, landmarks, and view-specific authoring.
