@@ -104,18 +104,22 @@ pub trait StudioHost {
     /// Draw AniCraft's real Stage in the supplied region when integrated. The default is an
     /// explicit placeholder; it never pretends to render document artwork.
     fn show_stage(&mut self, ui: &mut Ui) {
-        let rect = ui.available_rect_before_wrap();
+        let (rect, _) = ui.allocate_exact_size(ui.available_size(), egui::Sense::hover());
         ui.painter().rect_filled(rect, 4.0, Color32::from_rgb(37, 39, 43));
-        ui.allocate_ui_at_rect(rect, |ui| {
-            ui.with_layout(Layout::centered_and_justified(egui::Direction::TopDown), |ui| {
-                ui.vertical_centered(|ui| {
-                    ui.label(RichText::new("AniCraft Stage").size(18.0).strong().color(Color32::from_gray(220)));
-                    ui.add_space(6.0);
-                    ui.label(RichText::new("Host renderer connection pending").color(Color32::from_gray(150)));
-                });
-            });
-        });
-        ui.allocate_rect(rect, egui::Sense::hover());
+        ui.painter().text(
+            rect.center() - egui::vec2(0.0, 12.0),
+            egui::Align2::CENTER_CENTER,
+            "AniCraft Stage",
+            egui::FontId::proportional(18.0),
+            Color32::from_gray(220),
+        );
+        ui.painter().text(
+            rect.center() + egui::vec2(0.0, 12.0),
+            egui::Align2::CENTER_CENTER,
+            "Host renderer connection pending",
+            egui::FontId::proportional(13.0),
+            Color32::from_gray(150),
+        );
     }
 }
 
