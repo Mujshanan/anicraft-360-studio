@@ -13,6 +13,7 @@
 #![forbid(unsafe_code)]
 
 use egui::{Align, Color32, Layout, RichText, Ui};
+use std::collections::BTreeSet;
 
 /// A read-only character item projected from the host document and Studio data.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -23,6 +24,8 @@ pub struct CharacterNode {
     pub kind: CharacterNodeKind,
     /// Indentation depth in the already-resolved hierarchy.
     pub depth: usize,
+    /// Whether this projection node has children in the hierarchy.
+    pub has_children: bool,
     pub status: NodeStatus,
     /// Canonical Forma Deform identity; a reference, not a copy.
     pub controller_id: Option<String>,
@@ -258,6 +261,7 @@ pub enum IntegrationStatus {
 #[derive(Clone, Debug, Default)]
 pub struct StudioUiState {
     pub selected_node_id: Option<String>,
+    pub collapsed_node_ids: BTreeSet<String>,
     pub active_view_id: Option<String>,
     pub asset_filter: String,
     pub selected_issue_id: Option<String>,
@@ -339,9 +343,36 @@ pub fn show_character_hierarchy(
         .id_salt("anicraft_360_character_hierarchy")
         .auto_shrink([false, false])
         .show(ui, |ui| {
+            let mut collapsed_ancestors: Vec<(usize, String)> = Vec::new();
             for node in &model.nodes {
+                while collapsed_ancestors
+                    .last()
+                    .is_some_and(|(depth, _)| *depth >= node.depth)
+                {
+                    collapsed_ancestors.pop();
+                }
+                if collapsed_ancestors
+                    .last()
+                    .is_some_and(|(depth, _)| node.depth > *depth)
+                {
+                    continue;
+                }
+
                 ui.horizontal(|ui| {
                     ui.add_space((node.depth.min(24) as f32) * 12.0);
+                    let collapsed = state.collapsed_node_ids.contains(&node.id);
+                    if node.has_children {
+                        if ui.small_button(if collapsed { "▸" } else { "▾" }).clicked() {
+                            if collapsed {
+                                state.collapsed_node_ids.remove(&node.id);
+                            } else {
+                                state.collapsed_node_ids.insert(node.id.clone());
+                            }
+                        }
+                    } else {
+                        ui.add_space(16.0);
+                    }
+
                     let selected = state.selected_node_id.as_deref() == Some(node.id.as_str());
                     let response = ui.selectable_label(
                         selected,
@@ -356,6 +387,10 @@ pub fn show_character_hierarchy(
                         ui.small(RichText::new(node.status.label()).color(node.status.color(ui.visuals())));
                     });
                 });
+
+                if node.has_children && state.collapsed_node_ids.contains(&node.id) {
+                    collapsed_ancestors.push((node.depth, node.id.clone()));
+                }
             }
         });
 }
@@ -392,7 +427,7 @@ pub fn show_view_rail(
             ui.horizontal(|ui| {
                 for view in &model.views {
                     let selected = state.active_view_id.as_deref() == Some(view.id.as_str());
-                    let title = format!("{} · {:.1}°", view.label, view.angle_degrees);
+                    let title = format!("{} · {}", view.label, angle_label(view.angle_degrees));
                     let response = ui.add(
                         egui::Button::selectable(selected, title)
                             .min_size(egui::vec2(116.0, 34.0)),
@@ -423,7 +458,7 @@ pub fn show_turn_ruler(
     ui.horizontal(|ui| {
         ui.strong("Turn");
         if let Some(view) = active {
-            ui.label(format!("{:.1}°", view.angle_degrees));
+            ui.label(angle_label(view.angle_degrees));
             ui.label(RichText::new(&view.label).weak());
         } else {
             ui.label(RichText::new("No active registered view").weak());
@@ -581,6 +616,14 @@ pub fn show_diagnostics(
     }
 }
 
+fn angle_label(angle_degrees: f32) -> String {
+    if angle_degrees.is_finite() {
+        format!("{angle_degrees:.1}°")
+    } else {
+        "Angle unavailable".to_owned()
+    }
+}
+
 fn empty_state(ui: &mut Ui, title: &str, description: &str) {
     ui.vertical_centered(|ui| {
         ui.add_space(8.0);
@@ -598,6 +641,7 @@ mod tests {
     fn default_state_is_transient_and_empty() {
         let state = StudioUiState::default();
         assert!(state.selected_node_id.is_none());
+        assert!(state.collapsed_node_ids.is_empty());
         assert!(state.active_view_id.is_none());
         assert!(state.selected_issue_id.is_none());
         assert!(state.asset_filter.is_empty());
@@ -617,6 +661,7 @@ mod tests {
     fn view_statuses_and_origins_are_explicit() {
         assert_eq!(ViewStatus::MissingArtwork.label(), "Missing artwork");
         assert_eq!(ViewOrigin::Preview.label(), "Preview only");
+        assert_eq!(angle_label(f32::NAN), "Angle unavailable");
     }
 
     #[test]
