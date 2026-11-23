@@ -94,7 +94,10 @@ pub fn show_multi_view_authoring(
     ui.horizontal_wrapped(|ui| {
         for kind in MultiViewKind::ALL {
             let angle = kind.target_angle();
-            let view = nearest_view(views, angle);
+            // A preset card represents an authored slot only when a view is
+            // close enough to that canonical angle; otherwise it must remain creatable.
+            let view = nearest_view(views, angle)
+                .filter(|view| angular_distance(view.angle_degrees, angle) <= 22.5);
             ui.group(|ui| {
                 ui.strong(kind.label());
                 ui.label(format!("{angle:.0}°"));
@@ -221,6 +224,17 @@ mod tests {
         assert_eq!(nearest_view(&views, 72.0).map(|v| v.id.as_str()), Some("side"));
         assert_eq!(nearest_view(&views, 359.0).map(|v| v.id.as_str()), Some("front"));
         assert!(nearest_view(&views, f32::NAN).is_none());
+    }
+
+    #[test]
+    fn preset_slots_do_not_claim_distant_views_as_authored() {
+        let views = vec![view("front", 0.0)];
+        assert!(nearest_view(&views, 45.0)
+            .filter(|view| angular_distance(view.angle_degrees, 45.0) <= 22.5)
+            .is_none());
+        assert!(nearest_view(&views, 20.0)
+            .filter(|view| angular_distance(view.angle_degrees, 20.0) <= 22.5)
+            .is_some());
     }
 
     #[test]
