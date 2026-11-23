@@ -70,6 +70,8 @@ pub struct MultiViewAuthoringState {
 pub enum MultiViewAction {
     ActivateView { view_id: String },
     RequestCreateView { kind: MultiViewKind, angle_degrees: f32 },
+    RequestSetRequiredArtwork { view_id: String, element_ids: Vec<String> },
+    RequestSetViewArtwork { view_id: String, element_ids: Vec<String> },
 }
 
 /// Multi-view authoring rail. The host owns view persistence and supplies
@@ -79,6 +81,7 @@ pub fn show_multi_view_authoring(
     views: &[CharacterView],
     coverage: &[ViewArtworkCoverage],
     state: &mut MultiViewAuthoringState,
+    selected_element_ids: &[String],
     actions: &mut Vec<MultiViewAction>,
 ) {
     ui.heading("Multi-view authoring");
@@ -104,6 +107,19 @@ pub fn show_multi_view_authoring(
                     if ui.button("Activate view").clicked() {
                         actions.push(MultiViewAction::ActivateView { view_id: view.id.clone() });
                     }
+                    ui.horizontal_wrapped(|ui| {
+                        let has_selection = !selected_element_ids.is_empty();
+                        if ui.add_enabled(has_selection, egui::Button::new("Set requirements from selection")).clicked() {
+                            actions.push(MultiViewAction::RequestSetRequiredArtwork {
+                                view_id: view.id.clone(), element_ids: selected_element_ids.to_vec(),
+                            });
+                        }
+                        if ui.add_enabled(has_selection, egui::Button::new("Mark selection as artwork")).clicked() {
+                            actions.push(MultiViewAction::RequestSetViewArtwork {
+                                view_id: view.id.clone(), element_ids: selected_element_ids.to_vec(),
+                            });
+                        }
+                    });
                 } else {
                     ui.label(RichText::new("No authored view").weak());
                     if ui.button("Create view").clicked() {
