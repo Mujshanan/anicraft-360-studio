@@ -15,6 +15,8 @@
 use egui::{Align, Color32, Layout, RichText, Ui};
 use std::collections::BTreeSet;
 
+pub mod multiview;
+
 /// A read-only character item projected from the host document and Studio data.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct CharacterNode {
@@ -184,6 +186,34 @@ impl AssetCompatibility {
     }
 }
 
+
+/// A native AniCraft armature bone exposed to Studio authoring.
+#[derive(Clone, Debug, PartialEq)]
+pub struct SmartBoneEntry {
+    pub id: String,
+    pub name: String,
+    pub parent_element_id: String,
+    pub child_element_id: String,
+    pub angle_degrees: f32,
+    pub limits_degrees: Option<[f32; 2]>,
+    /// Canonical Forma Deform ControllerId reference; never evaluated here.
+    pub controller_id: Option<String>,
+}
+
+/// A Switch Group is a Library folder containing alternate symbol artwork.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct SwitchGroupEntry {
+    pub id: String,
+    pub name: String,
+    pub options: Vec<SwitchOptionEntry>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct SwitchOptionEntry {
+    pub id: String,
+    pub name: String,
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum IssueSeverity {
     Info,
@@ -227,6 +257,7 @@ pub struct ValidationIssue {
 /// Plugin presence or a version string alone is not evidence of support.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct StudioCapabilities {
+    pub create_smart_bone: bool,
     pub create_switch_group: bool,
     pub create_view: bool,
     pub open_assets: bool,
@@ -240,6 +271,12 @@ pub struct StudioUiModel {
     pub character_name: String,
     pub document_name: String,
     pub nodes: Vec<CharacterNode>,
+
+    /// Selected host element IDs, in AniCraft selection order.
+    pub selected_element_ids: Vec<String>,
+    pub smart_bones: Vec<SmartBoneEntry>,
+    pub switch_groups: Vec<SwitchGroupEntry>,
+    pub library_symbols: Vec<SwitchOptionEntry>,
     /// Already sorted by the domain's canonical angle ordering.
     pub views: Vec<CharacterView>,
     pub assets: Vec<AssetEntry>,
@@ -257,23 +294,56 @@ pub enum IntegrationStatus {
     Error(String),
 }
 
+/// Contextual editor displayed in the Studio workspace inspector.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum WorkspacePanel {
+    #[default]
+    Properties,
+    SmartBone,
+    SwitchGroups,
+}
+
 /// Transient workspace state only. These fields are never document data.
 #[derive(Clone, Debug, Default)]
 pub struct StudioUiState {
+    pub active_workspace_panel: WorkspacePanel,
     pub selected_node_id: Option<String>,
     pub collapsed_node_ids: BTreeSet<String>,
     pub active_view_id: Option<String>,
     pub asset_filter: String,
     pub selected_issue_id: Option<String>,
+
+    pub smart_bone_name: String,
+    pub smart_bone_min_degrees: f32,
+    pub smart_bone_max_degrees: f32,
+    pub selected_smart_bone_id: Option<String>,
+    pub switch_group_name: String,
+    pub selected_switch_group_id: Option<String>,
+    pub selected_switch_option_id: Option<String>,
+    pub selected_switch_source_symbol_id: Option<String>,
 }
 
 /// Semantic intents. The host validates every intent against the active
 /// document, stable identities, capability state, and command registry.
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq)]
 pub enum StudioUiAction {
     SelectCharacterNode { node_id: String },
     ActivateCharacterView { view_id: String },
-    RequestCreateSwitchGroup,
+
+    RequestCreateSmartBone {
+        parent_element_id: String,
+        child_element_id: String,
+        name: String,
+    },
+    RequestSelectSmartBone { bone_id: String },
+    RequestSetSmartBoneLimits {
+        bone_id: String,
+        min_degrees: f32,
+        max_degrees: f32,
+    },
+    RequestCreateSwitchGroup { name: String },
+    RequestAddSwitchOption { group_id: String, symbol_id: String },
+    RequestActivateSwitchOption { symbol_id: String },
     RequestCreateView,
     RequestOpenAsset { asset_id: String },
     RequestOpenDeformationTarget { target_id: String },
@@ -330,7 +400,9 @@ pub fn show_character_hierarchy(
         .on_disabled_hover_text("The host does not currently expose Switch Group creation.")
         .clicked()
     {
-        actions.push(StudioUiAction::RequestCreateSwitchGroup);
+        actions.push(StudioUiAction::RequestCreateSwitchGroup {
+            name: if state.switch_group_name.trim().is_empty() { "Switch Group".to_owned() } else { state.switch_group_name.trim().to_owned() },
+        });
     }
     ui.separator();
 
@@ -538,6 +610,236 @@ pub fn show_properties(
     }
 }
 
+
+/// Human-readable selection guidance; IDs remain available for precise host diagnostics.
+fn show_stage_selection_guidance(ui: &mut Ui, model: &StudioUiModel, purpose: &str, ordered_pair: bool) {
+    let count = model.selected_element_ids.len();
+    ui.group(|ui| {
+        ui.horizontal(|ui| {
+            ui.strong(format!("Stage selection · {count}"));
+            ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                ui.label(RichText::new(purpose).weak());
+            });
+        });
+        match count {
+            0 => { ui.label(RichText::new("Nothing selected. Select artwork on the Stage to continue.").weak()); }
+            1 => {
+                ui.label(format!("1. {}", model.selected_element_ids[0]));
+                if ordered_pair { ui.label(RichText::new("Select a second, different element.").weak()); }
+            }
+            _ if ordered_pair => {
+                ui.label(format!("Parent: {}", model.selected_element_ids[0]));
+                ui.label(format!("Child: {}", model.selected_element_ids[1]));
+                if count > 2 {
+                    ui.label(RichText::new(format!("{} additional selection(s) are ignored; the first two define the bone.", count - 2)).weak());
+                }
+            }
+            _ => {
+                for (index, id) in model.selected_element_ids.iter().enumerate() {
+                    ui.label(format!("{}. {}", index + 1, id));
+                }
+            }
+        }
+    });
+}
+
+fn smart_bone_controller_status(bone: &SmartBoneEntry, preview_available: bool) -> (&'static str, &'static str) {
+    match (bone.controller_id.is_some(), preview_available) {
+        (true, true) => ("Controller bound · preview available", "Forma Deform owns controller evaluation."),
+        (true, false) => ("Controller bound · preview unavailable", "The controller reference is present, but the host has not exposed preview capability."),
+        (false, true) => ("No controller bound", "Bind a Forma Deform ControllerId to enable controller-driven preview."),
+        (false, false) => ("No controller bound", "Bind the controller in Forma Deform. Preview is not currently exposed by the host."),
+    }
+}
+
+fn switch_option_preview<'a>(group: &'a SwitchGroupEntry, selected_id: Option<&str>) -> Option<&'a SwitchOptionEntry> {
+    group.options.iter().find(|option| Some(option.id.as_str()) == selected_id)
+}
+
+fn can_create_smart_bone(model: &StudioUiModel, state: &StudioUiState) -> bool {
+    model.capabilities.create_smart_bone
+        && model.selected_element_ids.len() >= 2
+        && model.selected_element_ids[0] != model.selected_element_ids[1]
+        && !state.smart_bone_name.trim().is_empty()
+}
+
+fn smart_bone_limits_valid(min_degrees: f32, max_degrees: f32) -> bool {
+    min_degrees.is_finite() && max_degrees.is_finite() && min_degrees < max_degrees
+}
+
+/// Smart Bone authoring over AniCraft's native armature commands. Controller
+/// references are identifiers only; Forma Deform owns their evaluation.
+pub fn show_smart_bone_editor(
+    ui: &mut Ui,
+    model: &StudioUiModel,
+    state: &mut StudioUiState,
+    actions: &mut Vec<StudioUiAction>,
+) {
+    ui.heading("Smart Bone");
+    ui.label(RichText::new("Author a native armature bone, then bind its controller in Forma Deform.").weak());
+    ui.horizontal(|ui| {
+        ui.label("Name");
+        ui.text_edit_singleline(&mut state.smart_bone_name);
+    });
+    let can_create = can_create_smart_bone(model, state);
+    if ui.add_enabled(can_create, egui::Button::new("＋ Create from selected elements")).clicked()
+        && let (Some(parent), Some(child)) = (model.selected_element_ids.first(), model.selected_element_ids.get(1))
+    {
+        actions.push(StudioUiAction::RequestCreateSmartBone {
+            parent_element_id: parent.clone(),
+            child_element_id: child.clone(),
+            name: state.smart_bone_name.trim().to_owned(),
+        });
+    }
+    show_stage_selection_guidance(ui, model, "Smart Bone source", true);
+    if model.selected_element_ids.len() >= 2 && model.selected_element_ids[0] == model.selected_element_ids[1] {
+        ui.colored_label(ui.visuals().warn_fg_color, "The first two selections must be different elements.");
+    }
+    if state.smart_bone_name.trim().is_empty() {
+        ui.colored_label(ui.visuals().warn_fg_color, "Enter a name before creating the Smart Bone.");
+    }
+    ui.separator();
+    if model.smart_bones.is_empty() {
+        empty_state(ui, "No armature bones", "Create a bone from two selected Stage elements to begin authoring.");
+        return;
+    }
+
+    egui::ScrollArea::vertical().show(ui, |ui| {
+        for bone in &model.smart_bones {
+            let selected = state.selected_smart_bone_id.as_deref() == Some(bone.id.as_str());
+            if ui.selectable_label(selected, format!("{}  {}", if bone.name.is_empty() { "Bone" } else { &bone.name }, bone.id)).clicked() {
+                state.selected_smart_bone_id = Some(bone.id.clone());
+                state.smart_bone_min_degrees = bone.limits_degrees.map_or(-180.0, |v| v[0]);
+                state.smart_bone_max_degrees = bone.limits_degrees.map_or(180.0, |v| v[1]);
+                actions.push(StudioUiAction::RequestSelectSmartBone { bone_id: bone.id.clone() });
+            }
+            if selected {
+                ui.horizontal(|ui| {
+                    ui.label("Angle");
+                    ui.monospace(format!("{:.1}°", bone.angle_degrees));
+                });
+                ui.horizontal(|ui| {
+                    ui.label("Limits");
+                    ui.add(egui::DragValue::new(&mut state.smart_bone_min_degrees).speed(1.0).suffix("°"));
+                    ui.label("to");
+                    ui.add(egui::DragValue::new(&mut state.smart_bone_max_degrees).speed(1.0).suffix("°"));
+                    let limits_valid = smart_bone_limits_valid(
+                        state.smart_bone_min_degrees,
+                        state.smart_bone_max_degrees,
+                    );
+                    if ui.add_enabled(limits_valid, egui::Button::new("Apply")).clicked() {
+                        actions.push(StudioUiAction::RequestSetSmartBoneLimits {
+                            bone_id: bone.id.clone(),
+                            min_degrees: state.smart_bone_min_degrees,
+                            max_degrees: state.smart_bone_max_degrees,
+                        });
+                    }
+                    if !limits_valid {
+                        ui.colored_label(ui.visuals().warn_fg_color, "Limits must be finite; minimum must be below maximum.");
+                    }
+                });
+                ui.label(RichText::new(format!("Parent {} → child {}", bone.parent_element_id, bone.child_element_id)).weak());
+                let (status, detail) = smart_bone_controller_status(bone, model.capabilities.controller_preview);
+                ui.horizontal(|ui| {
+                    let color = if bone.controller_id.is_some() { ui.visuals().hyperlink_color } else { ui.visuals().warn_fg_color };
+                    ui.colored_label(color, status);
+                });
+                ui.label(RichText::new(detail).weak());
+                if let Some(controller) = &bone.controller_id {
+                    ui.label("Forma Deform ControllerId");
+                    ui.monospace(controller);
+                }
+            }
+            ui.separator();
+        }
+    });
+}
+
+/// Discrete Switch Groups backed by AniCraft Library folders and symbol assets.
+/// Activating an option changes the selected symbol instance through a host command.
+pub fn show_switch_group_editor(
+    ui: &mut Ui,
+    model: &StudioUiModel,
+    state: &mut StudioUiState,
+    actions: &mut Vec<StudioUiAction>,
+) {
+    ui.heading("Switch Groups");
+    ui.label(RichText::new("Each group is a Library folder; its options are alternate symbols.").weak());
+    ui.horizontal(|ui| {
+        ui.text_edit_singleline(&mut state.switch_group_name);
+        if ui.add_enabled(model.capabilities.create_switch_group && !state.switch_group_name.trim().is_empty(),
+            egui::Button::new("＋ Create Group")).clicked() {
+            actions.push(StudioUiAction::RequestCreateSwitchGroup { name: state.switch_group_name.trim().to_owned() });
+        }
+    });
+    if model.switch_groups.is_empty() {
+        empty_state(ui, "No Switch Groups", "Create a group, then add symbol assets as its options.");
+    }
+    show_stage_selection_guidance(ui, model, "Switch target", false);
+    for group in &model.switch_groups {
+        let selected = state.selected_switch_group_id.as_deref() == Some(group.id.as_str());
+        if ui.selectable_label(selected, format!("▤ {}", group.name)).clicked() {
+            state.selected_switch_group_id = Some(group.id.clone());
+            state.selected_switch_option_id = group.options.first().map(|v| v.id.clone());
+            state.selected_switch_source_symbol_id = None;
+        }
+        if selected {
+            ui.group(|ui| {
+                ui.horizontal(|ui| {
+                    ui.strong(&group.name);
+                    ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                        ui.label(RichText::new(format!("{} option(s)", group.options.len())).weak());
+                    });
+                });
+                if let Some(option) = switch_option_preview(group, state.selected_switch_option_id.as_deref()) {
+                    ui.label("Selected option preview");
+                    ui.strong(&option.name);
+                    ui.label(RichText::new(format!("Symbol · {}", option.id)).weak());
+                } else if group.options.is_empty() {
+                    ui.label(RichText::new("This group has no options yet. Add a Library symbol below.").weak());
+                } else {
+                    ui.label(RichText::new("Choose an option to inspect it here.").weak());
+                }
+            });
+            for option in &group.options {
+                if ui.selectable_label(state.selected_switch_option_id.as_deref() == Some(option.id.as_str()),
+                    format!("  ▪ {}", option.name)).clicked() {
+                    state.selected_switch_option_id = Some(option.id.clone());
+                }
+            }
+            if !model.library_symbols.is_empty() {
+                let mut chosen = state.selected_switch_source_symbol_id.clone().unwrap_or_default();
+                egui::ComboBox::from_id_salt(("studio_switch_symbol", group.id.as_str()))
+                    .selected_text(model.library_symbols.iter().find(|s| s.id == chosen).map_or("Choose symbol", |s| s.name.as_str()))
+                    .show_ui(ui, |ui| {
+                        for symbol in &model.library_symbols {
+                            ui.selectable_value(&mut chosen, symbol.id.clone(), &symbol.name);
+                        }
+                    });
+                state.selected_switch_source_symbol_id = (!chosen.is_empty()).then_some(chosen);
+                if ui.add_enabled(state.selected_switch_source_symbol_id.is_some(),
+                    egui::Button::new("Duplicate selected symbol into group")).clicked()
+                    && let Some(symbol_id) = state.selected_switch_source_symbol_id.clone()
+                {
+                    actions.push(StudioUiAction::RequestAddSwitchOption { group_id: group.id.clone(), symbol_id });
+                }
+            }
+            let selected_option = switch_option_preview(group, state.selected_switch_option_id.as_deref());
+            if let Some(option) = selected_option {
+                if model.selected_element_ids.is_empty() {
+                    ui.label(RichText::new("Select one or more target instances on the Stage to activate this option.").weak());
+                }
+                if ui.add_enabled(!model.selected_element_ids.is_empty(), egui::Button::new("Activate on Stage selection")).clicked() {
+                    actions.push(StudioUiAction::RequestActivateSwitchOption { symbol_id: option.id.clone() });
+                }
+            } else {
+                ui.label(RichText::new("Select an option before activating it.").weak());
+            }
+        }
+        ui.separator();
+    }
+}
+
 /// Asset browser presentation. Retrieval, compatibility checks, import, and
 /// file access remain in AniCraft's host asset service.
 pub fn show_asset_library(
@@ -637,6 +939,26 @@ fn empty_state(ui: &mut Ui, title: &str, description: &str) {
     });
 }
 
+/// Contextual editor selector inside the host-owned Studio inspector.
+fn show_workspace_inspector(
+    ui: &mut Ui,
+    model: &StudioUiModel,
+    state: &mut StudioUiState,
+    actions: &mut Vec<StudioUiAction>,
+) {
+    ui.horizontal_wrapped(|ui| {
+        ui.selectable_value(&mut state.active_workspace_panel, WorkspacePanel::Properties, "Properties");
+        ui.selectable_value(&mut state.active_workspace_panel, WorkspacePanel::SmartBone, "Smart Bone");
+        ui.selectable_value(&mut state.active_workspace_panel, WorkspacePanel::SwitchGroups, "Switch Groups");
+    });
+    ui.separator();
+    match state.active_workspace_panel {
+        WorkspacePanel::Properties => show_properties(ui, model, state, actions),
+        WorkspacePanel::SmartBone => show_smart_bone_editor(ui, model, state, actions),
+        WorkspacePanel::SwitchGroups => show_switch_group_editor(ui, model, state, actions),
+    }
+}
+
 /// Compose the primary 360 Studio workspace inside a host-owned dock region.
 ///
 /// The host supplies the real AniCraft Stage through `show_stage`. The callback
@@ -678,7 +1000,7 @@ pub fn show_workspace(
                 });
                 ui.add_space(6.0);
                 egui::Frame::group(ui.style()).show(ui, |ui| {
-                    show_properties(ui, model, state, actions);
+                    show_workspace_inspector(ui, model, state, actions);
                 });
                 ui.add_space(6.0);
                 show_turn_ruler(ui, model, state, actions);
@@ -730,7 +1052,7 @@ pub fn show_workspace(
             |ui| {
                 egui::Frame::group(ui.style()).show(ui, |ui| {
                     ui.set_min_size(egui::vec2(right_width - 8.0, content_height - 8.0));
-                    show_properties(ui, model, state, actions);
+                    show_workspace_inspector(ui, model, state, actions);
                 });
             },
         );
@@ -744,6 +1066,7 @@ mod tests {
     #[test]
     fn default_state_is_transient_and_empty() {
         let state = StudioUiState::default();
+        assert_eq!(state.active_workspace_panel, WorkspacePanel::Properties);
         assert!(state.selected_node_id.is_none());
         assert!(state.collapsed_node_ids.is_empty());
         assert!(state.active_view_id.is_none());
@@ -752,8 +1075,60 @@ mod tests {
     }
 
     #[test]
+    fn controller_feedback_distinguishes_binding_from_preview_capability() {
+        let mut bone = SmartBoneEntry {
+            id: "bone-1".into(), name: "Elbow".into(), parent_element_id: "upper".into(),
+            child_element_id: "lower".into(), angle_degrees: 0.0, limits_degrees: None,
+            controller_id: None,
+        };
+        assert_eq!(smart_bone_controller_status(&bone, false).0, "No controller bound");
+        bone.controller_id = Some("controller-1".into());
+        assert_eq!(smart_bone_controller_status(&bone, false).0, "Controller bound · preview unavailable");
+        assert_eq!(smart_bone_controller_status(&bone, true).0, "Controller bound · preview available");
+    }
+
+    #[test]
+    fn switch_option_preview_only_resolves_options_in_the_selected_group() {
+        let group = SwitchGroupEntry {
+            id: "eyes".into(), name: "Eyes".into(),
+            options: vec![SwitchOptionEntry { id: "open".into(), name: "Open".into() }],
+        };
+        assert_eq!(switch_option_preview(&group, Some("open")).map(|v| v.name.as_str()), Some("Open"));
+        assert!(switch_option_preview(&group, Some("missing")).is_none());
+        assert!(switch_option_preview(&group, None).is_none());
+    }
+
+    #[test]
+    fn smart_bone_limits_reject_non_finite_and_reversed_ranges() {
+        assert!(smart_bone_limits_valid(-90.0, 90.0));
+        assert!(!smart_bone_limits_valid(10.0, 10.0));
+        assert!(!smart_bone_limits_valid(90.0, -90.0));
+        assert!(!smart_bone_limits_valid(f32::NAN, 90.0));
+        assert!(!smart_bone_limits_valid(-90.0, f32::INFINITY));
+    }
+
+    #[test]
+    fn smart_bone_creation_requires_capability_distinct_selection_and_name() {
+        let mut model = StudioUiModel::default();
+        let mut state = StudioUiState::default();
+        model.capabilities.create_smart_bone = true;
+        model.selected_element_ids = vec!["parent".into(), "child".into()];
+        state.smart_bone_name = "Elbow".into();
+        assert!(can_create_smart_bone(&model, &state));
+        model.selected_element_ids[1] = "parent".into();
+        assert!(!can_create_smart_bone(&model, &state));
+        model.selected_element_ids[1] = "child".into();
+        state.smart_bone_name = "  ".into();
+        assert!(!can_create_smart_bone(&model, &state));
+        state.smart_bone_name = "Elbow".into();
+        model.capabilities.create_smart_bone = false;
+        assert!(!can_create_smart_bone(&model, &state));
+    }
+
+    #[test]
     fn capability_defaults_are_fail_closed() {
         let capabilities = StudioCapabilities::default();
+        assert!(!capabilities.create_smart_bone);
         assert!(!capabilities.create_switch_group);
         assert!(!capabilities.create_view);
         assert!(!capabilities.open_assets);
